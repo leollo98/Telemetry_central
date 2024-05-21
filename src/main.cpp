@@ -1,87 +1,64 @@
-#include <Wire.h>
-#include <BH1750.h>
-#include "MHZ19.h"
-#include <Adafruit_BMP280.h>
-#include <Adafruit_AHTX0.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_ST7735.h> // Hardware-specific library
-#include <FastLED.h>
-#include <WiFiUdp.h>
-#include <ArduinoOTA.h>
-#include "time.h"
-#include <ESPAsyncWebServer.h>
-#include <AsyncTCP.h>
-#include <InfluxDbClient.h>
+#include <Arduino.h>
+
 #include <credenciais.h>
 
-#define DEVICE "ESP32"
+#include <WiFiUdp.h>
+#include <ArduinoOTA.h>
+
+#define MAX_ITER 50
+
+// tft
+#include <Adafruit_GFX.h>
+#include <Adafruit_ST7735.h> // Hardware-specific library
+// web server
+#include <ESPAsyncWebServer.h>
+#include <AsyncTCP.h>
+
+#include <InfluxDbClient.h>
+
+#include <FastLED.h>
+
+#include "time.h"
+
+#include <Adafruit_BMP280.h>
+#include <Adafruit_AHTX0.h>
+#include <MHZ19.h>
+#include <BH1750.h>
+
+/// @brief data storage
+// #define data
+#ifdef data
+#include <Preferences.h>
+Preferences pref;
+#endif
+
+/// @brief macros
+#define lin(a) (a * 24 + 4)
+
+/// @brief tft
+#define back 37
+#define TFT_RST 36 // we use the seesaw for resetting to save a pin
+#define SPI_SDA 40
+#define SPI_CLK 39
+#define TFT_CS 38
+#define TFT_DC 35
+Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, SPI_SDA, SPI_CLK, TFT_RST);
+
+/// @brief  web server
+
 AsyncWebServer server(80);
 
+/// @brief influxDB
 
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN);
 
-Point sensor("Quarto_Leo");
+/// @brief FastLED
 
-#define LED_PIN 19
-
-#define CANDLE 0xFF9329 // 0xFF9900
-
-// Information about the LED strip itself
+#define LED_PIN 13
 #define NUM_LEDS 16
+CRGB leds[NUM_LEDS];
 #define CHIPSET WS2812B
 #define COLOR_ORDER GRB
-CRGB leds[NUM_LEDS];
-
-uint64_t tempo[] = {0, 0, 0, 0};
-
-uint8_t light = 0;
-
-hw_timer_t *My_timer = NULL;
-
-// struct
-// {
-// 	uint8_t hora = 9;
-// 	uint8_t minutos = 35;
-// 	uint8_t duracao = 35;
-// } horarioLuz;
-
-/// @brief alarmes -> {hora de inicio, minuto de inicio, duração das luzes, luzes no maximo}
-uint8_t horarioLuz[][4] = {
-	{9, 10, 25, 5},
-};
-
-uint8_t alarme = 0;
-
-#define lin(a) (a * 24 + 4)
-
-#define TFT_RST 4 // we use the seesaw for resetting to save a pin
-#define SPI_SDA 23
-#define SPI_CLK 25
-#define TFT_CS 15
-#define TFT_DC 18
-// #define SCL 27
-// #define SDA 26
-#define RX 33
-#define TX 32
-#define vcc 14
-#define back 26
-
-Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, SPI_SDA, SPI_CLK, TFT_RST);
-
-TwoWire I2C = TwoWire(0);
-
-BH1750 lightMeter(0x23);  // addr nc
-BH1750 lightMeter2(0x5C); // addr vcc
-MHZ19 myMHZ19;
-Adafruit_AHTX0 aht;
-Adafruit_BMP280 bmp;
-
-const char *ntpServer = "br.pool.ntp.org";
-
-uint16_t valor[] = {0, 0, 0, 0, 0};
-float medido[] = {0, 0, 0, 0, 0, 0};
-float tempetura[] = {0, 0};
-
 bool FLED = true;
 bool FLED_override = false;
 bool started = false;
@@ -90,7 +67,46 @@ uint8_t sat = 0;
 uint8_t intenc = 0;
 uint64_t vezes = 0;
 
-uint8_t dia = 0;
+/// @brief alarmes -> {hora de inicio, minuto de inicio, duração do fade, luzes no maximo}
+#define quantidadeAlarmes 8
+uint8_t saveAlarme = 0;
+uint8_t horarioLuz[quantidadeAlarmes][4] = {
+	{9, 0, 15, 25},
+	{0, 0, 0, 0},
+	{0, 0, 0, 0},
+	{0, 0, 0, 0},
+	{0, 0, 0, 0},
+	{0, 0, 0, 0},
+	{0, 0, 0, 0},
+	{0, 0, 0, 0},
+};
+uint8_t alarme = 0;
+
+/// @brief variaveis de controle
+uint64_t tempo[] = {0, 0, 0, 0};
+
+/// @brief sensores
+
+#define RX1 11
+#define TX1 12
+// #define SDA 8
+// #define SCL 9
+uint8_t light = 255;
+uint8_t oldlight = 255;
+uint16_t valor[] = {0, 0, 0, 0, 0};
+float medido[] = {0, 0, 0, 0, 0, 0};
+float tempetura[] = {0, 0};
+BH1750 lightMeter(0x23);  // addr nc
+BH1750 lightMeter2(0x5C); // addr vcc
+MHZ19 myMHZ19;
+// TwoWire I2C = TwoWire(0);
+Adafruit_AHTX0 aht;
+Adafruit_BMP280 bmp;
+
+void preencheLeds(int16_t hue, int16_t sat, int16_t potencia)
+{
+	fill_solid(leds, 16, CHSV(hue, sat, potencia));
+}
 
 /// @brief cuida de executar as luzes dos alarmes cadastrados
 void onTimer()
@@ -99,82 +115,28 @@ void onTimer()
 	{
 		return;
 	}
-	if (vezes <= horarioLuz[alarme][2] * 60 * 2)
+	if (horarioLuz[alarme][0] == 0)
 	{
-		uint16_t potencia = min((int)(255.0 * vezes / (horarioLuz[alarme][2] * 60.0 * 2.0)), 255);
-		fill_solid(leds, 16, CHSV(25, 255, potencia));
+		if (horarioLuz[alarme][1] == 0)
+		{
+			return;
+		}
+	}
+
+	if (vezes <= (horarioLuz[alarme][2] + horarioLuz[alarme][3]) * 60 * 2)
+	{
+		uint16_t potencia = min((uint64_t)(255.0 * (double)vezes / (horarioLuz[alarme][2] * 60.0 * 2.0)), (uint64_t)254);
+		preencheLeds(25, 255, potencia);
 		vezes++;
 		FastLED.show();
 	}
 	else
 	{
-		fill_solid(leds, 16, CHSV(25, 255, 0));
+		preencheLeds(25, 255, 0);
 		vezes = 0;
 		started = false;
 		FastLED.show();
 	}
-}
-
-/// @brief inicia o display com todas as informações que não serão alteradas
-void display_init()
-{
-	tft.initR(INITR_BLACKTAB); // initialize a ST7735S chip
-	Serial.println("TFT initialized");
-	tft.setRotation(1);
-
-	tft.fillScreen(0);
-
-	tft.setTextSize(2);
-
-	uint8_t linha = 0;
-	tft.setCursor(4, lin(linha));
-	tft.print("Temp: ");
-	tft.setCursor(84, lin(linha));
-	tft.print("    ");
-	tft.setTextSize(1);
-	tft.print("o");
-	tft.setTextSize(2);
-	tft.print("C");
-
-	tft.drawLine(0, 24, 160, 24, 0xffff);
-
-	linha++;
-	tft.setCursor(4, lin(linha));
-	tft.print("Pres: ");
-	tft.setCursor(84, lin(linha));
-	tft.print("   hPa");
-
-	tft.drawLine(0, 24 + 24 * linha, 160, 24 + 24 * linha, 0xffff);
-
-	linha++;
-	tft.setCursor(4, lin(linha));
-	tft.print("Luz :");
-	tft.setTextSize(1);
-	tft.setCursor(40, lin(linha) + 10);
-	tft.print("int");
-	tft.setTextSize(2);
-	tft.setCursor(84, lin(linha));
-	tft.print("   Nit");
-
-	tft.drawLine(0, 24 + 24 * linha, 160, 24 + 24 * linha, 0xffff);
-
-	linha++;
-	tft.setCursor(4, lin(linha));
-	tft.print("umi :");
-	tft.setCursor(84, lin(linha));
-	tft.print("   %");
-
-	tft.drawLine(0, 24 + 24 * linha, 160, 24 + 24 * linha, 0xffff);
-
-	linha++;
-	tft.setCursor(4, lin(linha));
-	tft.print("CO  :");
-	tft.setTextSize(1);
-	tft.setCursor(30, lin(linha) + 6);
-	tft.print("2");
-	tft.setTextSize(2);
-	tft.setCursor(84, lin(linha));
-	tft.print("   ppm");
 }
 
 /// @brief pega o horario via NTP
@@ -190,54 +152,205 @@ tm localTime()
 	return timeinfo;
 }
 
-/// @brief definição dos pinos como saida
-void pinDef()
+void resetOnTime(struct tm timeinfo)
 {
-	pinMode(vcc, OUTPUT);
-	digitalWrite(vcc, 1);
-	pinMode(back, OUTPUT);
-	ledcSetup(0, 5e3, 8);
-	ledcAttachPin(back, 0);
-	ledcWrite(0, 0);
+	if (timeinfo.tm_hour != 4)
+	{
+		return;
+	}
+	if (timeinfo.tm_min != 0)
+	{
+		return;
+	}
+	if (timeinfo.tm_sec < 5)
+	{
+		return;
+	}
+	esp_restart();
+}
+
+void scanI2C()
+{
+	byte error, address;
+	int nDevices;
+	Serial.println("Scanning...");
+	nDevices = 0;
+	for (address = 1; address < 127; address++)
+	{
+		Wire.beginTransmission(address);
+		error = Wire.endTransmission();
+		if (error == 0)
+		{
+			Serial.print("I2C device found at address 0x");
+			if (address < 16)
+			{
+				Serial.print("0");
+			}
+			Serial.println(address, HEX);
+			nDevices++;
+		}
+		else if (error == 4)
+		{
+			Serial.print("Unknow error at address 0x");
+			if (address < 16)
+			{
+				Serial.print("0");
+			}
+			Serial.println(address, HEX);
+		}
+	}
+	if (nDevices == 0)
+	{
+		Serial.println("No I2C devices found\n");
+	}
+	else
+	{
+		Serial.println("done\n");
+	}
+}
+
+void display_Wire_Error()
+{
+	tft.fillScreen(0);
+	tft.setTextSize(3);
+	tft.setCursor(4, lin(1));
+	tft.print("Wire");
+	tft.setCursor(4, lin(2));
+	tft.print("Error");
+}
+
+void display_bmp_Error()
+{
+	tft.fillScreen(0);
+	tft.setTextSize(3);
+	tft.setCursor(4, lin(1));
+	tft.print("bmp");
+	tft.setCursor(4, lin(2));
+	tft.print("Error");
+}
+void display_aht_Error()
+{
+	tft.fillScreen(0);
+	tft.setTextSize(3);
+	tft.setCursor(4, lin(1));
+	tft.print("aht");
+	tft.setCursor(4, lin(2));
+	tft.print("Error");
+}
+
+void display_BH1750_Error(char num)
+{
+	tft.fillScreen(0);
+	tft.setTextSize(3);
+	tft.setCursor(4, lin(1));
+	tft.print("BH1750 ");
+	tft.print(num);
+	tft.setCursor(4, lin(2));
+	tft.print("Error");
+}
+
+void display_WiFi_Error()
+{
+	tft.fillScreen(0);
+	tft.setTextSize(3);
+	tft.setCursor(4, lin(1));
+	tft.print("WiFi");
+	tft.setCursor(4, lin(2));
+	tft.print("Error");
+}
+
+void display_Server_Error()
+{
+	tft.fillScreen(0);
+	tft.setTextSize(3);
+	tft.setCursor(4, lin(1));
+	tft.print("Server");
+	tft.setCursor(4, lin(2));
+	tft.print("Error");
 }
 
 /// @brief inicialização da TODOS os sensores
 void sensorsInit()
 {
-	Serial1.begin(9600, SERIAL_8N1, RX, TX);
+	Serial1.begin(9600, SERIAL_8N1, RX1, TX1);
 	myMHZ19.begin(Serial1);
 	myMHZ19.autoCalibration();
-	bmp.begin();
+
+	// Initialize the I2C bus (BH1750 library doesn't do this automatically)
+	// while (!I2C.begin(SDA, SCL, 400e3))
+	int16_t i = 0;
+	while (!Wire.begin() && i < MAX_ITER)
+	{
+		Serial.println("Wire problem");
+		delay(100);
+		display_Wire_Error();
+		i = i + 1;
+	}
+	// scanI2C();
+	i = 0;
+	while (!bmp.begin() && i < MAX_ITER)
+	{
+		Serial.println("Error initialising bmp");
+		delay(100);
+		display_bmp_Error();
+		i = i + 1;
+	}
+	Serial.println("BMP Init");
 	bmp.setSampling(Adafruit_BMP280::MODE_NORMAL,	/* Operating Mode. */
 					Adafruit_BMP280::SAMPLING_X2,	/* Temp. oversampling */
 					Adafruit_BMP280::SAMPLING_X16,	/* Pressure oversampling */
 					Adafruit_BMP280::FILTER_X16,	/* Filtering. */
 					Adafruit_BMP280::STANDBY_MS_1); /* Standby time. */
-	aht.begin();
-	// Initialize the I2C bus (BH1750 library doesn't do this automatically)
-	while (!I2C.begin())
-	// while ( !I2C.begin(SDA,SCL,400e3) )
+	Serial.println("BMP Config");
+	i = 0;
+	while (!aht.begin() && i < MAX_ITER)
 	{
-		Serial.println("Wire problem");
+		Serial.println("Error initialising aht");
 		delay(100);
+		display_aht_Error();
+		i = i + 1;
 	}
-	if (lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE_2, 0x23))
+	Serial.println("aht Init");
+	i = 0;
+	while (!lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE_2, 0x23) && i < MAX_ITER)
 	{
-		Serial.println(F("BH1750 Advanced begin"));
+		Serial.println("Error initialising BH1750");
+		delay(100);
+		display_BH1750_Error('1');
+		i = i + 1;
 	}
-	else
+	Serial.println("BH1750 Advanced begin");
+	i = 0;
+	while (!lightMeter2.begin(BH1750::CONTINUOUS_HIGH_RES_MODE_2, 0x5C) && i < MAX_ITER)
 	{
-		Serial.println(F("Error initialising BH1750"));
+
+		Serial.println("Error initialising BH1750 2");
+		delay(100);
+		display_BH1750_Error('2');
+		i = i + 1;
 	}
-	if (lightMeter2.begin(BH1750::CONTINUOUS_HIGH_RES_MODE_2, 0x5C))
+	Serial.println("BH1750 2 Advanced begin");
+	const char *ntpServer0 = "192.168.1.10";
+	const char *ntpServer1 = "pool.ntp.org";
+	const char *ntpServer2 = "ntp.br";
+	configTime(-10800, 0, ntpServer0, ntpServer1, ntpServer2);
+}
+
+/// @brief inicia o armazenamento para dados persisitentes
+void storageInit()
+{
+#ifdef data
+	pref.begin("alarms", false);
+
+	for (uint8_t i = 0; i < quantidadeAlarmes; i++)
 	{
-		Serial.println(F("BH1750 2 Advanced begin"));
+		for (size_t j = 0; j < 4; j++)
+		{
+			String chave = (i * 4 + j) + "a";
+			horarioLuz[i][j] = pref.getInt(chave.c_str(), 0);
+		}
 	}
-	else
-	{
-		Serial.println(F("Error initialising BH1750 2"));
-	}
-	configTime(-10800, 0, ntpServer);
+#endif
 }
 
 /// @brief HTML da pagina inicial `/`
@@ -283,6 +396,7 @@ String SendbaseHTML()
 	ptr += "<h4>humidade: </h4><h3>";
 	ptr += medido[5];
 	ptr += "%</h3>\n";
+	ptr += "";
 	ptr += "</body>\n";
 	ptr += "</html>\n";
 	return ptr;
@@ -358,6 +472,139 @@ String SendLEDHTML()
 	return ptr;
 }
 
+/// @brief HTML da pagina de controle dos alarmes `/alarme`
+String SendAlarmeHTML()
+{
+	String ptr = "<!DOCTYPE html> <html>\n";
+	ptr += "<head><meta name=\"viewport\" charset= \"utf-8\" content=\"width=device-width, initial-scale=1.0, user-scalable=no\">\n";
+	ptr += "<title>Sensors Control</title>\n";
+	ptr += "<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}\n";
+	ptr += "body{margin-top: 50px;} h1 {color: #444444;margin: 50px auto 30px;} h3 {color: #444444;margin-bottom: 50px;}\n";
+	ptr += ".button {display: block;width: 80px;background-color: #3498db;border: none;color: white;padding: 16px 32px;text-decoration: none;font-size: 100px;margin: 0px auto 35px;cursor: pointer;border-radius: 4px;}\n";
+	ptr += ".button-on {background-color: #3498db;}\n";
+	ptr += ".button-on:active {background-color: #2980b9;}\n";
+	ptr += ".button-off {background-color: #34495e;}\n";
+	ptr += ".button-off:active {background-color: #2c3e50;}\n";
+	ptr += "p {font-size: 14px;color: #888;margin-bottom: 10px;}\n";
+	ptr += "</style>\n";
+	ptr += "</head>\n";
+	ptr += "<body>\n";
+	ptr += "<h1>ESP32 Web Server</h1>\n";
+	ptr += "<h3>Alarmes:</h3>\n";
+	ptr += "<form action=\"/alarme\">\n";
+	ptr += "hora (0-23): <input type=\"text\" name=\"hora\" value=\"";
+	ptr += horarioLuz[saveAlarme - 1][0];
+	ptr += "\">\n";
+	ptr += "minuto (0-59): <input type=\"text\" name=\"minuto\" value=\"";
+	ptr += horarioLuz[saveAlarme - 1][1];
+	ptr += "\">\n";
+	ptr += "tempo fade in (0-59): <input type=\"text\" name=\"fade\" value=\"";
+	ptr += horarioLuz[saveAlarme - 1][2];
+	ptr += "\">\n";
+	ptr += "tempo maximos (0-59): <input type=\"text\" name=\"max\" value=\"";
+	ptr += horarioLuz[saveAlarme - 1][3];
+	ptr += "\">\n";
+	ptr += "<input type=\"submit\" value=\"Submit\">\n";
+	ptr += "</form>\n";
+	ptr += "<p>date: ";
+	struct tm data = localTime();
+	ptr += data.tm_wday;
+	ptr += " - ";
+	ptr += data.tm_hour;
+	ptr += ":";
+	ptr += data.tm_min;
+	ptr += ":";
+	ptr += data.tm_sec;
+	ptr += "\n <p> Potencia atual: ";
+	ptr += (int)(100 * vezes / (horarioLuz[alarme][2] * 60.0 * 2.0));
+	ptr += "%</p>\n";
+	ptr += "<p> Vezes atual: ";
+	ptr += (int)vezes;
+	ptr += "</p>\n";
+	ptr += "<p> duração atual: ";
+	ptr += horarioLuz[alarme][2];
+	ptr += "</p>\n";
+	ptr += "</body>\n";
+	ptr += "</html>\n";
+	return ptr;
+}
+
+String SendEcolhaAlarmeHTML()
+{
+	String ptr = "<!DOCTYPE html> <html>\n";
+	ptr += "<head><meta name=\"viewport\" charset= \"utf-8\" content=\"width=device-width, initial-scale=1.0, user-scalable=no\">\n";
+	ptr += "<title>Sensors Control</title>\n";
+	ptr += "<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}\n";
+	ptr += "body{margin-top: 50px;} h1 {color: #444444;margin: 50px auto 30px;} h3 {color: #444444;margin-bottom: 50px;}\n";
+	ptr += ".button {display: block;width: 80px;background-color: #3498db;border: none;color: white;padding: 16px 32px;text-decoration: none;font-size: 100px;margin: 0px auto 35px;cursor: pointer;border-radius: 4px;}\n";
+	ptr += ".button-on {background-color: #3498db;}\n";
+	ptr += ".button-on:active {background-color: #2980b9;}\n";
+	ptr += ".button-off {background-color: #34495e;}\n";
+	ptr += ".button-off:active {background-color: #2c3e50;}\n";
+	ptr += "p {font-size: 14px;color: #888;margin-bottom: 10px;}\n";
+	ptr += "table {font-family: arial, sans-serif;  border-collapse: collapse;  width: 100%;}td, th {  border: 1px solid #dddddd;  text-align: left;  padding: 8px;}tr:nth-child(even) {background-color: #dddddd;}\n";
+	ptr += "</style>\n";
+	ptr += "</head>\n";
+	ptr += "<body>\n";
+	ptr += "<h1>ESP32 Web Server</h1>\n";
+	ptr += "<h3>Alarmes:</h3>\n";
+#ifdef data
+	ptr += "<form action=\"/alarme\">\n";
+	ptr += "alarme (1-8): <input type=\"text\" name=\"alarme\" value=\"";
+	ptr += 1;
+	ptr += "\">\n";
+	ptr += "<input type=\"submit\" value=\"Submit\">\n";
+	ptr += "</form>\n";
+#endif
+	ptr += "<table>";
+	ptr += "<tr>";
+	ptr += "<th>Alarme</th>";
+	ptr += "<th>Hora</th>";
+	ptr += "<th>Minuto</th>";
+	ptr += "<th>Fade In</th>";
+	ptr += "<th>Maximo</th>";
+	ptr += "</tr>";
+
+	for (uint8_t i = 0; i < quantidadeAlarmes; i++)
+	{
+		ptr += "<tr>";
+		ptr += "<td>";
+		ptr += i + 1;
+		ptr += "</td>";
+		for (uint8_t j = 0; j < 4; j++)
+		{
+			ptr += "<td>";
+			ptr += horarioLuz[i][j];
+			ptr += "</td>";
+		}
+		ptr += "</tr>";
+	}
+	ptr += "</table>";
+
+	return ptr;
+}
+
+String SendERRORHTML()
+{
+	String ptr = "<!DOCTYPE html> <html>\n";
+	ptr += "<head><meta name=\"viewport\" charset= \"utf-8\" content=\"width=device-width, initial-scale=1.0, user-scalable=no\">\n";
+	ptr += "<title>Sensors Control</title>\n";
+	ptr += "<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}\n";
+	ptr += "body{margin-top: 50px;} h1 {color: #444444;margin: 50px auto 30px;} h3 {color: #444444;margin-bottom: 50px;}\n";
+	ptr += ".button {display: block;width: 80px;background-color: #3498db;border: none;color: white;padding: 16px 32px;text-decoration: none;font-size: 100px;margin: 0px auto 35px;cursor: pointer;border-radius: 4px;}\n";
+	ptr += ".button-on {background-color: #3498db;}\n";
+	ptr += ".button-on:active {background-color: #2980b9;}\n";
+	ptr += ".button-off {background-color: #34495e;}\n";
+	ptr += ".button-off:active {background-color: #2c3e50;}\n";
+	ptr += "p {font-size: 14px;color: #888;margin-bottom: 10px;}\n";
+	ptr += "</style>\n";
+	ptr += "</head>\n";
+	ptr += "<body>\n";
+	ptr += "<h1>ESP32 Web Server</h1>\n";
+	ptr += "<h3>Parametro fora de limite:</h3>\n";
+	return ptr;
+}
+
 void handle_OnConnect(AsyncWebServerRequest *request)
 {
 	request->send(200, "text/html", SendbaseHTML());
@@ -407,17 +654,178 @@ void handle_led_v2(AsyncWebServerRequest *request)
 	if (FLED_override)
 	{
 
-		fill_solid(leds, 16, CHSV((float)hue * 0.708, sat * 2.55, intenc * 2.55));
+		preencheLeds((float)hue * 255 / 360, sat * 2.55, intenc * 2.55);
 	}
 	else
 	{
-		fill_solid(leds, 16, CHSV(25, 255, 0));
+		preencheLeds(25, 255, 0);
 	}
 	FastLED.show();
 	request->send(200, "text/html", SendLEDHTML());
 }
 
-/// @brief inicializa o wifi e conexão com o banco de dados
+void handle_alarme(AsyncWebServerRequest *request)
+{
+	int paramsNr = request->params();
+	int ok = 0;
+	for (int i = 0; i < paramsNr; i++)
+	{
+		AsyncWebParameter *p = request->getParam(i);
+		if (p->name() == "alarme")
+		{
+			if ((p->value()).toInt() < quantidadeAlarmes)
+			{
+				saveAlarme = (p->value()).toInt();
+			}
+			else
+			{
+				request->send(200, "text/html", SendAlarmeHTML());
+				return;
+			}
+		}
+		if (p->name() == "hora")
+		{
+			horarioLuz[saveAlarme - 1][0] = (p->value()).toInt();
+			ok++;
+		}
+		if (p->name() == "minuto")
+		{
+			horarioLuz[saveAlarme - 1][1] = (p->value()).toInt();
+			ok++;
+		}
+		if (p->name() == "fade")
+		{
+			horarioLuz[saveAlarme - 1][2] = (p->value()).toInt();
+			ok++;
+		}
+		if (p->name() == "max")
+		{
+			horarioLuz[saveAlarme - 1][3] = (p->value()).toInt();
+			ok++;
+		}
+		if (ok == 4)
+		{
+#ifdef data
+			for (uint8_t i = 0; i < quantidadeAlarmes; i++)
+			{
+				for (size_t j = 0; j < 4; j++)
+				{
+					String chave = (i * 4 + j) + "a";
+					pref.putInt(chave.c_str(), horarioLuz[i][j]);
+				}
+			}
+			pref.end();
+			storageInit();
+#endif
+			saveAlarme = 0;
+		}
+	}
+	if (saveAlarme != 0)
+		request->send(200, "text/html", SendAlarmeHTML());
+	else
+		request->send(200, "text/html", SendEcolhaAlarmeHTML());
+}
+
+/// @brief inicializa o OTA do Arduino
+void ArduinoOTAInit()
+{
+	ArduinoOTA.onStart([]()
+					   {
+    	tft.fillScreen(0);
+		tft.setTextSize(3);
+		tft.setCursor(4, 56);
+		tft.print("Updating");
+		String type;
+    	if (ArduinoOTA.getCommand() == U_FLASH)
+        	type = "sketch";
+      	else // U_SPIFFS
+        	type = "filesystem";
+
+      	// NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
+      	Serial.println("Start updating " + type); })
+		.onEnd([]()
+			   { Serial.println("\nEnd"); })
+		.onProgress([](unsigned int progress, unsigned int total)
+					{ Serial.printf("Progress: %u%%\r", (progress / (total / 100))); })
+		.onError([](ota_error_t error)
+				 {
+    					Serial.printf("Error[%u]: ", error);
+    					if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+    					else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+    					else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+    					else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+    					else if (error == OTA_END_ERROR) Serial.println("End Failed"); });
+
+	ArduinoOTA.begin();
+}
+
+void fill_display()
+{
+	tft.fillScreen(0);
+	tft.setTextSize(2);
+
+	uint8_t linha = 0;
+	tft.setCursor(4, lin(linha));
+	tft.print("Temp: ");
+	tft.setCursor(84, lin(linha));
+	tft.print("    ");
+	tft.setTextSize(1);
+	tft.print("o");
+	tft.setTextSize(2);
+	tft.print("C");
+
+	tft.drawLine(0, 24, 160, 24, 0xffff);
+
+	linha++;
+	tft.setCursor(4, lin(linha));
+	tft.print("Pres: ");
+	tft.setCursor(84, lin(linha));
+	tft.print("   hPa");
+
+	tft.drawLine(0, 24 + 24 * linha, 160, 24 + 24 * linha, 0xffff);
+
+	linha++;
+	tft.setCursor(4, lin(linha));
+	tft.print("Luz :");
+	tft.setTextSize(1);
+	tft.setCursor(40, lin(linha) + 10);
+	tft.print("int");
+	tft.setTextSize(2);
+	tft.setCursor(84, lin(linha));
+	tft.print("   Nit");
+
+	tft.drawLine(0, 24 + 24 * linha, 160, 24 + 24 * linha, 0xffff);
+
+	linha++;
+	tft.setCursor(4, lin(linha));
+	tft.print("umid:");
+	tft.setCursor(84, lin(linha));
+	tft.print("   %");
+
+	tft.drawLine(0, 24 + 24 * linha, 160, 24 + 24 * linha, 0xffff);
+
+	linha++;
+	tft.setCursor(4, lin(linha));
+	tft.print("CO  :");
+	tft.setTextSize(1);
+	tft.setCursor(30, lin(linha) + 6);
+	tft.print("2");
+	tft.setTextSize(2);
+	tft.setCursor(84, lin(linha));
+	tft.print("   ppm");
+}
+
+void display_init()
+{
+	Serial.println("TFT start");
+	tft.initR(INITR_BLACKTAB); // initialize a ST7735S chip
+	Serial.println("TFT initialized");
+	tft.setRotation(1);
+
+	tft.fillScreen(0);
+	tft.setTextSize(1);
+}
+
 void wifiInit()
 {
 	WiFi.mode(WIFI_STA);
@@ -426,87 +834,47 @@ void wifiInit()
 	WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 	delay(10);
 	// while (wifiMulti.run() != WL_CONNECTED)
-	while (WiFi.localIP().toString() == "0.0.0.0")
+	int16_t i = 0;
+	while (!WiFi.isConnected() && i < MAX_ITER)
 	{
 		Serial.print(".");
 		delay(500);
+		display_WiFi_Error();
+		i = i + 1;
 	}
 	Serial.println();
 	if (!client.validateConnection())
 	{
-		tft.fillScreen(0);
-		tft.setTextSize(3);
-		tft.setCursor(4, lin(1));
-		tft.print("Server");
-		tft.setCursor(4, lin(2));
-		tft.print("Error");
+		display_Server_Error();
 		Serial.println("rebooting");
 		delay(5000);
 		ESP.restart();
 	}
+
 	server.on("/", [](AsyncWebServerRequest *request)
 			  { handle_OnConnect(request); });
 	server.on("/led", [](AsyncWebServerRequest *request)
 			  { handle_led_v2(request); });
-	// server.on("/led/on",[](AsyncWebServerRequest *request){handle_led_on(request);});
-	// server.on("/led/off",[](AsyncWebServerRequest *request){handle_led_off(request);});
-	// server.on("/override",[](AsyncWebServerRequest *request){handle_override(request);});
+	server.on("/alarme", [](AsyncWebServerRequest *request)
+			  { handle_alarme(request); });
 	server.onNotFound([](AsyncWebServerRequest *request)
 					  { handle_NotFound(request); });
 	server.begin();
 }
 
-/// @brief inicializa o OTA do Arduino
-void ArduinoOTAInit()
+void pinDef()
 {
-	ArduinoOTA.onStart([]()
-					   {
-      tft.fillScreen(0);
-	  tft.setTextSize(3);
-	  tft.setCursor(4, 56);
-	  tft.print("Updating");
-	  String type;
-      if (ArduinoOTA.getCommand() == U_FLASH)
-        type = "sketch";
-      else // U_SPIFFS
-        type = "filesystem";
-
-      // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-      Serial.println("Start updating " + type); })
-		.onEnd([]()
-			   { Serial.println("\nEnd"); })
-		.onProgress([](unsigned int progress, unsigned int total)
-					{ Serial.printf("Progress: %u%%\r", (progress / (total / 100))); })
-		.onError([](ota_error_t error)
-				 {
-      Serial.printf("Error[%u]: ", error);
-      if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-      else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-      else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-      else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-      else if (error == OTA_END_ERROR) Serial.println("End Failed"); });
-
-	ArduinoOTA.begin();
-}
-
-void setup()
-{
-	Serial.begin(115200);
-	pinDef();
-	wifiInit();
-	sensorsInit();
-	display_init();
-	ArduinoOTAInit();
-	ArduinoOTA.handle();
-
-	FastLED.addLeds<CHIPSET, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS);
-	FastLED.setBrightness(255);
-
-	tempo[0] = {millis()};
-	tempo[1] = {millis()};
-	tempo[2] = {millis()};
-	tempo[3] = {millis()};
-	Serial.println("init OK");
+	pinMode(LED_BUILTIN, OUTPUT);
+	pinMode(back, OUTPUT);
+	gpio_set_drive_capability((gpio_num_t)back, GPIO_DRIVE_CAP_MAX);
+	pinMode(TFT_RST, OUTPUT);
+	pinMode(TFT_CS, OUTPUT);
+	pinMode(TFT_DC, OUTPUT);
+	pinMode(SPI_SDA, OUTPUT);
+	pinMode(SPI_CLK, OUTPUT);
+	ledcSetup(0, 5e3, 8);
+	ledcAttachPin(back, 0);
+	ledcWrite(0, 255);
 }
 
 /// @brief configura os dados para a formatação correta e posiciona eles na tela
@@ -601,9 +969,10 @@ void alarmeControl(struct tm timeinfo)
 		for (uint8_t i = 0; i < sizeof horarioLuz / sizeof horarioLuz[0]; i++)
 		{
 			if (timeinfo.tm_hour == horarioLuz[i][0])
-				if (timeinfo.tm_min == horarioLuz[i][1]){
+				if (timeinfo.tm_min == horarioLuz[i][1])
+				{
 					ok = true;
-					alarme=i;
+					alarme = i;
 					break;
 				}
 		}
@@ -616,113 +985,174 @@ void alarmeControl(struct tm timeinfo)
 	}
 }
 
-// fill_solid(leds, 16, CHSV(25, 255, 0)); // cor, saturação, intencidade
-uint8_t oldlight = light;
+void fastledinit()
+{
+	FastLED.addLeds<CHIPSET, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS);
+	FastLED.setBrightness(255);
+}
+
+void timerinit()
+{
+	for (uint8_t i = 0; i < 4; i++)
+	{
+		tempo[i] = millis();
+	}
+}
+
+void setup()
+{
+	Serial.begin(115200);
+	Serial.println("(┛ಠ_ಠ)┛彡┻━┻");
+
+	pinDef();
+	display_init();
+	wifiInit();
+	ArduinoOTAInit();
+	ArduinoOTA.handle();
+
+	sensorsInit();
+	fastledinit();
+	timerinit();
+	fill_display();
+	Serial.println("init OK");
+}
+
+void controleBack()
+{
+	if (medido[2] > 2)
+	{
+		if (medido[3] > 2)
+		{
+			if (light != 255)
+			{
+				light++;
+			}
+		}
+	}
+	if (medido[2] < 2)
+	{
+		if (medido[3] < 2)
+		{
+			if (light != 0)
+			{
+				light--;
+			}
+		}
+	}
+	ledcWrite(0, light);
+	if (light != oldlight)
+	{
+		tft.drawLine(0, 127, 160, 127, 0xffff);
+		tft.drawLine(240 - light, 127, 160, 127, 0x0000);
+	}
+	oldlight = light;
+}
+
+void medidaLuz()
+{
+	if (lightMeter.measurementReady())
+	{
+		medido[3] = lightMeter.readLightLevel();
+	}
+	if (lightMeter2.measurementReady())
+	{
+		medido[2] = lightMeter2.readLightLevel();
+	}
+}
+
+void enviaValores()
+{
+	Point sensor("Quarto_Leo");
+	sensor.clearFields();
+	sensor.addField("temperatura", medido[0]);
+	sensor.addField("temperatura_caixa", tempetura[0]);
+	sensor.addField("temperatura_ESP32", temperatureRead());
+	sensor.addField("Pressão", medido[1]);
+	sensor.addField("Luz1", medido[2]);
+	sensor.addField("luz2", medido[3]);
+	sensor.addField("CO2", medido[4] == 10000 ? 0 : medido[4]);
+	sensor.addField("humidade", medido[5]);
+	if (WiFi.localIP().toString() == "0.0.0.0")
+	{
+		Serial.println("Wifi connection lost");
+		WiFi.disconnect(true, true);
+		WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+		delay(10);
+		int16_t i = 0;
+		while (WiFi.localIP().toString() == "0.0.0.0" && i < MAX_ITER)
+		{
+			Serial.print(".");
+			delay(50);
+			i = i + 1;
+			display_WiFi_Error();
+		}
+		fill_display();
+	}
+	int16_t i = 0;
+	while (!client.writePoint(sensor) && i < MAX_ITER) // Write point
+	{
+		delay(50);
+		Serial.println("error Write");
+		display_Server_Error();
+		i = i + 1;
+	}
+	if (i > 0)
+	{
+		fill_display();
+	}
+
+	alarmeControl(localTime());
+	FastLED.show();
+}
+
+void pegaValores()
+{
+	sensors_event_t humidity, temperatura;
+	aht.getEvent(&humidity, &temperatura);
+	tempetura[0] = bmp.readTemperature();
+	tempetura[1] = temperatura.temperature;
+	medido[0] = floorf((((tempetura[0] + tempetura[1]) / 2.0) + 0.5) * 100.0) / 100.0;
+	medido[0] = tempetura[1];
+	medido[1] = bmp.readPressure();
+	if (lightMeter.measurementReady())
+	{
+		medido[3] = lightMeter.readLightLevel();
+	}
+	if (lightMeter2.measurementReady())
+	{
+		medido[2] = lightMeter2.readLightLevel();
+	}
+	medido[4] = myMHZ19.getCO2();
+	medido[5] = humidity.relative_humidity;
+}
+
 void loop()
 {
 	long myMillis = millis();
-	sensors_event_t humidity, temp, temp2, pres;
-	ArduinoOTA.handle();
 
+	ArduinoOTA.handle();
 	if (tempo[0] + 15 <= myMillis) // controle luz da tela
 	{
-
-		if (medido[2] < 2)
-		{
-			if (medido[3] < 2)
-			{
-				if (light != 255)
-				{
-					light++;
-				}
-			}
-		}
-		if (medido[2] > 2)
-		{
-			if (medido[3] > 2)
-			{
-				if (light != 5)
-				{
-					light--;
-				}
-			}
-		}
-		ledcWrite(0, light);
-		if (light != oldlight)
-		{
-			tft.drawLine(0, 127, 160, 127, 0xffff);
-			tft.drawLine(240 - light, 127, 160, 127, 0x0000);
-		}
-		oldlight = light;
+		controleBack();
 		tempo[0] = tempo[0] + 25;
 	}
 	if (tempo[1] + 500 <= myMillis)
 	{
-
-		if (lightMeter.measurementReady())
-		{
-			medido[3] = lightMeter.readLightLevel();
-		}
-		if (lightMeter2.measurementReady())
-		{
-			medido[2] = lightMeter2.readLightLevel();
-		}
+		medidaLuz();
 		onTimer();
+		resetOnTime(localTime());
 		tempo[1] = tempo[1] + 500;
 	}
-	if (tempo[3] + 2500 <= myMillis)
+	if (tempo[3] + 2000 <= myMillis)
 	{
-
-		aht.getEvent(&humidity, &temp);
-		tempetura[0] = bmp.readTemperature();
-		tempetura[1] = temp.temperature;
-		// medido[0] = floorf((((tempetura[0] + tempetura[1]) / 2.0) + 0.5) * 100.0) / 100.0;
-		medido[0] = tempetura[1];
-		medido[1] = bmp.readPressure();
-		if (lightMeter.measurementReady())
-		{
-			medido[3] = lightMeter.readLightLevel();
-		}
-		if (lightMeter2.measurementReady())
-		{
-			medido[2] = lightMeter2.readLightLevel();
-		}
-		medido[4] = myMHZ19.getCO2();
-		medido[5] = humidity.relative_humidity;
+		pegaValores();
 		display(medido[0], medido[1] / 1e2, medido[2], medido[5], medido[4]);
-		tempo[3] = tempo[3] + 2500;
+		tempo[3] = tempo[3] + 2000;
 	}
 	if (tempo[2] + 4000 <= myMillis)
 	{
-		sensor.clearFields();
-		sensor.addField("temperatura", medido[0]);
-		sensor.addField("temperatura_caixa", tempetura[0]);
-		sensor.addField("temperatura_ESP32", temperatureRead());
-		sensor.addField("Pressão", medido[1]);
-		sensor.addField("Luz1", medido[2]);
-		sensor.addField("luz2", medido[3]);
-		sensor.addField("CO2", medido[4] == 10000 ? 0 : medido[4]);
-		sensor.addField("humidade", medido[5]);
-		if (WiFi.localIP().toString() == "0.0.0.0")
-		{
-			Serial.println("Wifi connection lost");
-			WiFi.disconnect(true, true);
-			WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-			delay(10);
-			while (WiFi.localIP().toString() == "0.0.0.0")
-			{
-				Serial.print(".");
-				delay(50);
-			}
-		}
-		while (!client.writePoint(sensor)) // Write point
-		{
-			delay(10);
-			Serial.println("error Write");
-		}
-		alarmeControl(localTime());
-		FastLED.show();
-		Serial.println("5s OK");
+		enviaValores();
+		Serial.println("4s OK");
 		tempo[2] = tempo[2] + 4000;
 	}
 }
