@@ -4,6 +4,7 @@
 
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
+#include <HTTPClient.h>
 
 #define MAX_ITER 50
 
@@ -47,6 +48,7 @@ Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, SPI_SDA, SPI_CLK, TFT_RST)
 /// @brief  web server
 
 AsyncWebServer server(80);
+HTTPClient http;
 
 /// @brief influxDB
 
@@ -71,7 +73,7 @@ uint64_t vezes = 0;
 #define quantidadeAlarmes 8
 uint8_t saveAlarme = 0;
 uint8_t horarioLuz[quantidadeAlarmes][4] = {
-	{9, 0, 15, 25},
+	{9, 30, 15, 25},
 	{0, 0, 0, 0},
 	{0, 0, 0, 0},
 	{0, 0, 0, 0},
@@ -83,7 +85,8 @@ uint8_t horarioLuz[quantidadeAlarmes][4] = {
 uint8_t alarme = 0;
 
 /// @brief variaveis de controle
-uint64_t tempo[] = {0, 0, 0, 0};
+uint64_t tempo[] = {0, 0, 0, 0, 0};
+uint64_t aux[] = {0, 0};
 
 /// @brief sensores
 
@@ -228,6 +231,7 @@ void display_bmp_Error()
 	tft.setCursor(4, lin(2));
 	tft.print("Error");
 }
+
 void display_aht_Error()
 {
 	tft.fillScreen(0);
@@ -267,6 +271,57 @@ void display_Server_Error()
 	tft.print("Server");
 	tft.setCursor(4, lin(2));
 	tft.print("Error");
+}
+
+void display_Internet_Error()
+{
+
+	tft.fillScreen(0);
+	tft.setTextSize(3);
+	tft.setCursor(4, lin(1));
+	tft.print("Internet");
+	tft.setCursor(4, lin(2));
+	tft.print("Error");
+}
+
+void display_Router_Error()
+{
+	tft.fillScreen(0);
+	tft.setTextSize(3);
+	tft.setCursor(4, lin(1));
+	tft.print("Router");
+	tft.setCursor(4, lin(2));
+	tft.print("Error");
+}
+
+void display_Swtich2_Error()
+{
+	tft.fillScreen(0);
+	tft.setTextSize(3);
+	tft.setCursor(4, lin(1));
+	tft.print("Switch");
+	tft.setCursor(4, lin(2));
+	tft.print("Sala");
+}
+
+void display_Swtich3_Error()
+{
+	tft.fillScreen(0);
+	tft.setTextSize(3);
+	tft.setCursor(4, lin(1));
+	tft.print("Switch");
+	tft.setCursor(4, lin(2));
+	tft.print("Server");
+}
+
+void display_Swtich4_Error()
+{
+	tft.fillScreen(0);
+	tft.setTextSize(3);
+	tft.setCursor(4, lin(1));
+	tft.print("Switch");
+	tft.setCursor(4, lin(2));
+	tft.print("Leo");
 }
 
 /// @brief inicialização da TODOS os sensores
@@ -1126,6 +1181,118 @@ void pegaValores()
 	medido[5] = humidity.relative_humidity;
 }
 
+bool makeRequest(String serverName)
+{
+
+	http.begin(serverName.c_str());
+	if (http.GET() > 0)
+	{
+		return true;
+	}
+	return false;
+}
+
+void verificaRede()
+{
+	aux[0]++;
+	if (WiFi.localIP().toString() == "0.0.0.0")
+	{
+		Serial.println("Wifi connection lost");
+		WiFi.disconnect(true, true);
+		WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+		delay(10);
+		int16_t i = 0;
+		while (WiFi.localIP().toString() == "0.0.0.0" && i < MAX_ITER)
+		{
+			Serial.print(".");
+			delay(50);
+			i = i + 1;
+			display_WiFi_Error();
+		}
+		fill_display();
+	}
+	switch (aux[0])
+	{
+	case 1:
+		if (!makeRequest("google.com"))
+		{
+			display_Internet_Error();
+			aux[1] = 1;
+		}
+		break;
+	case 2:
+		if (!makeRequest("192.168.1.1"))
+		{
+			display_Router_Error();
+			aux[1] = 2;
+		}
+		break;
+	case 3:
+		if (!makeRequest("192.168.1.2"))
+		{
+			display_Swtich2_Error();
+			aux[1] = 3;
+		}
+		break;
+	case 4:
+		if (!makeRequest("192.168.1.3"))
+		{
+			display_Swtich2_Error();
+			aux[1] = 4;
+		}
+		break;
+	case 5:
+		if (!makeRequest("192.168.1.4"))
+		{
+			display_Swtich2_Error();
+			aux[1] = 5;
+		}
+		break;
+	case 6:
+		aux[0] = 0;
+		switch (aux[1])
+		{
+		case 1:
+			if (makeRequest("google.com"))
+			{
+				fill_display();
+			}
+
+			break;
+		case 2:
+			if (makeRequest("192.168.1.9:8006"))
+			{
+				fill_display();
+			}
+			break;
+		case 3:
+			if (makeRequest("192.168.1.2"))
+			{
+				fill_display();
+			}
+			break;
+		case 4:
+			if (makeRequest("192.168.1.3"))
+			{
+				fill_display();
+			}
+			break;
+		case 5:
+			if (makeRequest("192.168.1.4"))
+			{
+				fill_display();
+			}
+		default:
+			break;
+		}
+
+		break;
+	default:
+		aux[0] = 0;
+		break;
+	}
+}
+
 void loop()
 {
 	long myMillis = millis();
@@ -1143,16 +1310,21 @@ void loop()
 		resetOnTime(localTime());
 		tempo[1] = tempo[1] + 500;
 	}
-	if (tempo[3] + 2000 <= myMillis)
+	if (tempo[2] + 2000 <= myMillis)
 	{
 		pegaValores();
 		display(medido[0], medido[1] / 1e2, medido[2], medido[5], medido[4]);
-		tempo[3] = tempo[3] + 2000;
+		tempo[2] = tempo[2] + 2000;
 	}
-	if (tempo[2] + 4000 <= myMillis)
+	if (tempo[3] + 4000 <= myMillis)
 	{
 		enviaValores();
 		Serial.println("4s OK");
-		tempo[2] = tempo[2] + 4000;
+		tempo[3] = tempo[3] + 4000;
+	}
+	if (tempo[4] + 10000 <= myMillis)
+	{
+		//verificaRede();
+		tempo[4] = tempo[4] + 10000;
 	}
 }
