@@ -53,6 +53,7 @@ HTTPClient http;
 /// @brief influxDB
 
 InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN);
+Point sensor("Quarto_Leo");
 
 /// @brief FastLED
 
@@ -87,6 +88,18 @@ uint8_t alarme = 0;
 /// @brief variaveis de controle
 uint64_t tempo[] = {0, 0, 0, 0, 0};
 uint64_t aux[] = {0, 0};
+enum error
+{
+	check,
+	inicio,
+	wire,
+	Sbmp,
+	Saht,
+	SlightMeter,
+	SlightMeter2,
+	connected,
+	ponto
+};
 
 /// @brief sensores
 
@@ -324,6 +337,280 @@ void display_Swtich4_Error()
 	tft.print("Leo");
 }
 
+void fill_display()
+{
+	tft.fillScreen(0);
+	tft.setTextSize(2);
+
+	uint8_t linha = 0;
+	tft.setCursor(4, lin(linha));
+	tft.print("Temp: ");
+	tft.setCursor(84, lin(linha));
+	tft.print("    ");
+	tft.setTextSize(1);
+	tft.print("o");
+	tft.setTextSize(2);
+	tft.print("C");
+
+	tft.drawLine(0, 24, 160, 24, 0xffff);
+
+	linha++;
+	tft.setCursor(4, lin(linha));
+	tft.print("Pres: ");
+	tft.setCursor(84, lin(linha));
+	tft.print("   hPa");
+
+	tft.drawLine(0, 24 + 24 * linha, 160, 24 + 24 * linha, 0xffff);
+
+	linha++;
+	tft.setCursor(4, lin(linha));
+	tft.print("Luz :");
+	tft.setTextSize(1);
+	tft.setCursor(40, lin(linha) + 10);
+	tft.print("int");
+	tft.setTextSize(2);
+	tft.setCursor(84, lin(linha));
+	tft.print("   Nit");
+
+	tft.drawLine(0, 24 + 24 * linha, 160, 24 + 24 * linha, 0xffff);
+
+	linha++;
+	tft.setCursor(4, lin(linha));
+	tft.print("umid:");
+	tft.setCursor(84, lin(linha));
+	tft.print("   %");
+
+	tft.drawLine(0, 24 + 24 * linha, 160, 24 + 24 * linha, 0xffff);
+
+	linha++;
+	tft.setCursor(4, lin(linha));
+	tft.print("CO  :");
+	tft.setTextSize(1);
+	tft.setCursor(30, lin(linha) + 6);
+	tft.print("2");
+	tft.setTextSize(2);
+	tft.setCursor(84, lin(linha));
+	tft.print("   ppm");
+}
+
+void display_Error(error erro)
+{
+	uint64_t i = 0;
+	switch (erro)
+	{
+	case inicio:
+		while (!WiFi.isConnected() && i < MAX_ITER)
+		{
+			if (i == 0)
+			{
+				display_WiFi_Error();
+			}
+			Serial.print(".");
+			delay(500);
+			i = i + 1;
+		}
+		Serial.println();
+		if (!client.validateConnection())
+		{
+			display_Server_Error();
+			Serial.println("rebooting");
+			delay(5000);
+			ESP.restart();
+		}
+		break;
+	case wire:
+		while (!Wire.begin() && i < MAX_ITER)
+		{
+			if (i == 0)
+			{
+				display_Wire_Error();
+			}
+			Serial.println("Wire problem");
+			delay(100);
+
+			i = i + 1;
+		}
+		break;
+	case Sbmp:
+		while (!bmp.begin() && i < MAX_ITER)
+		{
+			if (i == 0)
+			{
+				display_bmp_Error();
+			}
+			Serial.println("Error initialising bmp");
+			delay(100);
+
+			i = i + 1;
+		}
+		break;
+	case Saht:
+		while (!aht.begin() && i < MAX_ITER)
+		{
+			if (i == 0)
+			{
+				display_aht_Error();
+			}
+			Serial.println("Error initialising aht");
+			delay(100);
+
+			i = i + 1;
+		}
+		break;
+	case SlightMeter:
+		while (!lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE_2, 0x23) && i < MAX_ITER)
+		{
+			if (i == 0)
+			{
+				display_BH1750_Error('1');
+			}
+			Serial.println("Error initialising BH1750");
+			delay(100);
+
+			i = i + 1;
+		}
+		break;
+	case SlightMeter2:
+		while (!lightMeter2.begin(BH1750::CONTINUOUS_HIGH_RES_MODE_2, 0x5C) && i < MAX_ITER)
+		{
+			if (i == 0)
+			{
+				display_BH1750_Error('2');
+			}
+			Serial.println("Error initialising BH1750 2");
+			delay(100);
+			i = i + 1;
+		}
+		break;
+	case connected:
+		if (WiFi.localIP().toString() == "0.0.0.0")
+		{
+			Serial.println("Wifi connection lost");
+			WiFi.disconnect(true, true);
+			WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+			delay(10);
+			while (WiFi.localIP().toString() == "0.0.0.0" && i < MAX_ITER)
+			{
+				if (i == 0)
+				{
+					display_WiFi_Error();
+				}
+				Serial.print(".");
+				delay(50);
+				i = i + 1;
+			}
+		}
+		break;
+	case ponto:
+		i = 0;
+		while (!client.writePoint(sensor) && i < MAX_ITER) // Write point
+		{
+			if (i == 0)
+			{
+				display_Server_Error();
+			}
+			delay(50);
+			Serial.print("error Write - ");
+			Serial.print(client.getLastErrorMessage());
+			Serial.print(" -;- ");
+			Serial.println(client.getLastStatusCode());
+
+			i = i + 1;
+			tft.drawFastHLine(140, 124, 20, 0xf800);
+			tft.drawFastHLine(140, 125, 20, 0xf800);
+			tft.drawFastHLine(140, 126, 20, 0xf800);
+		}
+		if (i == 0)
+		{
+			tft.drawFastHLine(140, 124, 20, 0x0000);
+			tft.drawFastHLine(140, 125, 20, 0x0000);
+			tft.drawFastHLine(140, 126, 20, 0x0000);
+		}
+		break;
+	case check:
+		if (WiFi.isConnected())
+		{
+			tft.drawFastHLine(0, 124, 20, 0x0000);
+			tft.drawFastHLine(0, 125, 20, 0x0000);
+			tft.drawFastHLine(0, 126, 20, 0x0000);
+		}
+		else
+		{
+			tft.drawFastHLine(0, 124, 20, 0xf800);
+			tft.drawFastHLine(0, 125, 20, 0xf800);
+			tft.drawFastHLine(0, 126, 20, 0xf800);
+		}
+		if (bmp.begin())
+		{
+			tft.drawFastHLine(40, 124, 20, 0x0000);
+			tft.drawFastHLine(40, 125, 20, 0x0000);
+			tft.drawFastHLine(40, 126, 20, 0x0000);
+		}
+		else
+		{
+			tft.drawFastHLine(40, 124, 20, 0xf800);
+			tft.drawFastHLine(40, 125, 20, 0xf800);
+			tft.drawFastHLine(40, 126, 20, 0xf800);
+		}
+		if (aht.begin())
+		{
+			tft.drawFastHLine(60, 124, 20, 0x0000);
+			tft.drawFastHLine(60, 125, 20, 0x0000);
+			tft.drawFastHLine(60, 126, 20, 0x0000);
+		}
+		else
+		{
+			tft.drawFastHLine(60, 124, 20, 0xfbe0);
+			tft.drawFastHLine(60, 125, 20, 0xfbe0);
+			tft.drawFastHLine(60, 126, 20, 0xfbe0);
+		}
+		if (lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE_2, 0x23))
+		{
+			tft.drawFastHLine(80, 124, 20, 0x0000);
+			tft.drawFastHLine(80, 125, 20, 0x0000);
+			tft.drawFastHLine(80, 126, 20, 0x0000);
+		}
+		else
+		{
+			tft.drawFastHLine(80, 124, 20, 0xf800);
+			tft.drawFastHLine(80, 125, 20, 0xf800);
+			tft.drawFastHLine(80, 126, 20, 0xf800);
+		}
+		if (lightMeter2.begin(BH1750::CONTINUOUS_HIGH_RES_MODE_2, 0x5C))
+		{
+			tft.drawFastHLine(100, 124, 20, 0x0000);
+			tft.drawFastHLine(100, 125, 20, 0x0000);
+			tft.drawFastHLine(100, 126, 20, 0x0000);
+		}
+		else
+		{
+			tft.drawFastHLine(100, 124, 20, 0xfbe0);
+			tft.drawFastHLine(100, 125, 20, 0xfbe0);
+			tft.drawFastHLine(100, 126, 20, 0xfbe0);
+		}
+		if (WiFi.localIP().toString() == "0.0.0.0")
+		{
+			tft.drawFastHLine(120, 124, 20, 0xf800);
+			tft.drawFastHLine(120, 125, 20, 0xf800);
+			tft.drawFastHLine(120, 126, 20, 0xf800);
+		}
+		else
+		{
+
+			tft.drawFastHLine(120, 124, 20, 0x0000);
+			tft.drawFastHLine(120, 125, 20, 0x0000);
+			tft.drawFastHLine(120, 126, 20, 0x0000);
+		}
+		break;
+	default:
+		break;
+	}
+	if (i > 0)
+	{
+		fill_display();
+	}
+}
+
 /// @brief inicialização da TODOS os sensores
 void sensorsInit()
 {
@@ -331,25 +618,10 @@ void sensorsInit()
 	myMHZ19.begin(Serial1);
 	myMHZ19.autoCalibration();
 
-	// Initialize the I2C bus (BH1750 library doesn't do this automatically)
-	// while (!I2C.begin(SDA, SCL, 400e3))
-	int16_t i = 0;
-	while (!Wire.begin() && i < MAX_ITER)
-	{
-		Serial.println("Wire problem");
-		delay(100);
-		display_Wire_Error();
-		i = i + 1;
-	}
+	display_Error(wire);
 	// scanI2C();
-	i = 0;
-	while (!bmp.begin() && i < MAX_ITER)
-	{
-		Serial.println("Error initialising bmp");
-		delay(100);
-		display_bmp_Error();
-		i = i + 1;
-	}
+
+	display_Error(Sbmp);
 	Serial.println("BMP Init");
 	bmp.setSampling(Adafruit_BMP280::MODE_NORMAL,	/* Operating Mode. */
 					Adafruit_BMP280::SAMPLING_X2,	/* Temp. oversampling */
@@ -357,33 +629,15 @@ void sensorsInit()
 					Adafruit_BMP280::FILTER_X16,	/* Filtering. */
 					Adafruit_BMP280::STANDBY_MS_1); /* Standby time. */
 	Serial.println("BMP Config");
-	i = 0;
-	while (!aht.begin() && i < MAX_ITER)
-	{
-		Serial.println("Error initialising aht");
-		delay(100);
-		display_aht_Error();
-		i = i + 1;
-	}
-	Serial.println("aht Init");
-	i = 0;
-	while (!lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE_2, 0x23) && i < MAX_ITER)
-	{
-		Serial.println("Error initialising BH1750");
-		delay(100);
-		display_BH1750_Error('1');
-		i = i + 1;
-	}
-	Serial.println("BH1750 Advanced begin");
-	i = 0;
-	while (!lightMeter2.begin(BH1750::CONTINUOUS_HIGH_RES_MODE_2, 0x5C) && i < MAX_ITER)
-	{
 
-		Serial.println("Error initialising BH1750 2");
-		delay(100);
-		display_BH1750_Error('2');
-		i = i + 1;
-	}
+	display_Error(Saht);
+
+	Serial.println("aht Init");
+	display_Error(SlightMeter);
+
+	Serial.println("BH1750 Advanced begin");
+	display_Error(SlightMeter2);
+
 	Serial.println("BH1750 2 Advanced begin");
 	const char *ntpServer0 = "192.168.1.10";
 	const char *ntpServer1 = "pool.ntp.org";
@@ -814,62 +1068,6 @@ void ArduinoOTAInit()
 	ArduinoOTA.begin();
 }
 
-void fill_display()
-{
-	tft.fillScreen(0);
-	tft.setTextSize(2);
-
-	uint8_t linha = 0;
-	tft.setCursor(4, lin(linha));
-	tft.print("Temp: ");
-	tft.setCursor(84, lin(linha));
-	tft.print("    ");
-	tft.setTextSize(1);
-	tft.print("o");
-	tft.setTextSize(2);
-	tft.print("C");
-
-	tft.drawLine(0, 24, 160, 24, 0xffff);
-
-	linha++;
-	tft.setCursor(4, lin(linha));
-	tft.print("Pres: ");
-	tft.setCursor(84, lin(linha));
-	tft.print("   hPa");
-
-	tft.drawLine(0, 24 + 24 * linha, 160, 24 + 24 * linha, 0xffff);
-
-	linha++;
-	tft.setCursor(4, lin(linha));
-	tft.print("Luz :");
-	tft.setTextSize(1);
-	tft.setCursor(40, lin(linha) + 10);
-	tft.print("int");
-	tft.setTextSize(2);
-	tft.setCursor(84, lin(linha));
-	tft.print("   Nit");
-
-	tft.drawLine(0, 24 + 24 * linha, 160, 24 + 24 * linha, 0xffff);
-
-	linha++;
-	tft.setCursor(4, lin(linha));
-	tft.print("umid:");
-	tft.setCursor(84, lin(linha));
-	tft.print("   %");
-
-	tft.drawLine(0, 24 + 24 * linha, 160, 24 + 24 * linha, 0xffff);
-
-	linha++;
-	tft.setCursor(4, lin(linha));
-	tft.print("CO  :");
-	tft.setTextSize(1);
-	tft.setCursor(30, lin(linha) + 6);
-	tft.print("2");
-	tft.setTextSize(2);
-	tft.setCursor(84, lin(linha));
-	tft.print("   ppm");
-}
-
 void display_init()
 {
 	Serial.println("TFT start");
@@ -890,21 +1088,7 @@ void wifiInit()
 	delay(10);
 	// while (wifiMulti.run() != WL_CONNECTED)
 	int16_t i = 0;
-	while (!WiFi.isConnected() && i < MAX_ITER)
-	{
-		Serial.print(".");
-		delay(500);
-		display_WiFi_Error();
-		i = i + 1;
-	}
-	Serial.println();
-	if (!client.validateConnection())
-	{
-		display_Server_Error();
-		Serial.println("rebooting");
-		delay(5000);
-		ESP.restart();
-	}
+	display_Error(inicio);
 
 	server.on("/", [](AsyncWebServerRequest *request)
 			  { handle_OnConnect(request); });
@@ -1068,7 +1252,6 @@ void setup()
 	sensorsInit();
 	fastledinit();
 	timerinit();
-	fill_display();
 	Serial.println("init OK");
 }
 
@@ -1117,7 +1300,7 @@ void medidaLuz()
 
 void enviaValores()
 {
-	Point sensor("Quarto_Leo");
+
 	sensor.clearFields();
 	sensor.addField("temperatura", medido[0]);
 	sensor.addField("temperatura_caixa", tempetura[0]);
@@ -1127,35 +1310,8 @@ void enviaValores()
 	sensor.addField("luz2", medido[3]);
 	sensor.addField("CO2", medido[4] == 10000 ? 0 : medido[4]);
 	sensor.addField("humidade", medido[5]);
-	if (WiFi.localIP().toString() == "0.0.0.0")
-	{
-		Serial.println("Wifi connection lost");
-		WiFi.disconnect(true, true);
-		WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-		delay(10);
-		int16_t i = 0;
-		while (WiFi.localIP().toString() == "0.0.0.0" && i < MAX_ITER)
-		{
-			Serial.print(".");
-			delay(50);
-			i = i + 1;
-			display_WiFi_Error();
-		}
-		fill_display();
-	}
-	int16_t i = 0;
-	while (!client.writePoint(sensor) && i < MAX_ITER) // Write point
-	{
-		delay(50);
-		Serial.println("error Write");
-		display_Server_Error();
-		i = i + 1;
-	}
-	if (i > 0)
-	{
-		fill_display();
-	}
-
+	display_Error(connected);
+	display_Error(ponto);
 	alarmeControl(localTime());
 	FastLED.show();
 }
@@ -1195,22 +1351,7 @@ bool makeRequest(String serverName)
 void verificaRede()
 {
 	aux[0]++;
-	if (WiFi.localIP().toString() == "0.0.0.0")
-	{
-		Serial.println("Wifi connection lost");
-		WiFi.disconnect(true, true);
-		WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-		delay(10);
-		int16_t i = 0;
-		while (WiFi.localIP().toString() == "0.0.0.0" && i < MAX_ITER)
-		{
-			Serial.print(".");
-			delay(50);
-			i = i + 1;
-			display_WiFi_Error();
-		}
-		fill_display();
-	}
+	display_Error(connected);
 	switch (aux[0])
 	{
 	case 1:
@@ -1313,6 +1454,7 @@ void loop()
 	if (tempo[2] + 2000 <= myMillis)
 	{
 		pegaValores();
+		display_Error(check);
 		display(medido[0], medido[1] / 1e2, medido[2], medido[5], medido[4]);
 		tempo[2] = tempo[2] + 2000;
 	}
@@ -1324,7 +1466,7 @@ void loop()
 	}
 	if (tempo[4] + 10000 <= myMillis)
 	{
-		//verificaRede();
+		// verificaRede();
 		tempo[4] = tempo[4] + 10000;
 	}
 }
