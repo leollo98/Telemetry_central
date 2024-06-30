@@ -10,7 +10,8 @@
         "vector": "cpp",
         "memory": "cpp",
         "random": "cpp",
-        "initializer_list": "cpp"
+        "initializer_list": "cpp",
+        "string_view": "cpp"
     },
     "cmake.sourceDirectory": "${workspaceFolder}/.pio/libdeps/esp32doit-devkit-v1/Adafruit BusIO"
 }

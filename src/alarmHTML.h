@@ -21,10 +21,10 @@ const char ALARM_HTML[] = R"rawliteral(
     <h1>ESP32 Web Server</h1>
     <h3>Alarmes:</h3>
     <form action="/alarme">
-        hora (0-23): <input type="text" name="hora" value="%HORA%">
-        minuto (0-59): <input type="text" name="minuto" value="%MINUTO%">
-        tempo fade in (0-59): <input type="text" name="fade" value="%FADE%">
-        tempo maximos (0-59): <input type="text" name="max" value="%MAX%">
+        <div>hora (0-23): <input type="text" name="hora" value="%HORA%"></div>
+        <div>minuto (0-59): <input type="text" name="minuto" value="%MINUTO%"></div>
+        <div>tempo fade in (0-59): <input type="text" name="fade" value="%FADE%"></div>
+        <div>luzes no maximo (0-59): <input type="text" name="max" value="%MAX%"></div>
         <input type="submit" value="Submit">
     </form>
     <p>date: %DATA%</p>

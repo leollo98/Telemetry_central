@@ -30,8 +30,8 @@
 #include <BH1750.h>
 
 /// @brief data storage
-// #define data
-#ifdef data
+#define save
+#ifdef save
 #include <Preferences.h>
 Preferences pref;
 #endif
@@ -655,7 +655,7 @@ void sensorsInit()
 /// @brief inicia o armazenamento para dados persisitentes
 void storageInit()
 {
-#ifdef data
+#ifdef save
 	pref.begin("alarms", false);
 
 	for (uint8_t i = 0; i < quantidadeAlarmes; i++)
@@ -750,7 +750,7 @@ String SendEcolhaAlarmeHTML()
 	ptr += "<body>\n";
 	ptr += "<h1>ESP32 Web Server</h1>\n";
 	ptr += "<h3>Alarmes:</h3>\n";
-#ifdef data
+#ifdef save
 	ptr += "<form action=\"/alarme\">\n";
 	ptr += "alarme (1-8): <input type=\"text\" name=\"alarme\" value=\"";
 	ptr += 1;
@@ -907,7 +907,7 @@ void handle_alarme(AsyncWebServerRequest *request)
 		}
 		if (ok == 4)
 		{
-#ifdef data
+#ifdef save
 			for (uint8_t i = 0; i < quantidadeAlarmes; i++)
 			{
 				for (size_t j = 0; j < 4; j++)
