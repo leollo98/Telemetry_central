@@ -1,6 +1,9 @@
 #include <Arduino.h>
 
 #include <credenciais.h>
+#include <baseHTML.h>
+#include <ledHTML.h>
+#include <alarmHTML.h>
 
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
@@ -74,7 +77,7 @@ uint64_t vezes = 0;
 #define quantidadeAlarmes 8
 uint8_t saveAlarme = 0;
 uint8_t horarioLuz[quantidadeAlarmes][4] = {
-	{9, 30, 15, 25},
+	{9, 0, 15, 25},
 	{0, 0, 0, 0},
 	{0, 0, 0, 0},
 	{0, 0, 0, 0},
@@ -414,7 +417,11 @@ void display_Error(error erro)
 		{
 			display_Server_Error();
 			Serial.println("rebooting");
-			delay(5000);
+			for (uint16_t i = 0; i < 1000; i++)
+			{
+				ArduinoOTA.handle();
+				delay(5);
+			}
 			ESP.restart();
 		}
 		break;
@@ -663,179 +670,65 @@ void storageInit()
 }
 
 /// @brief HTML da pagina inicial `/`
-String SendbaseHTML()
-{
-	String ptr = "<!DOCTYPE html> <html>\n";
-	ptr += "<head><meta name=\"viewport\" http-equiv=\"refresh\" content=\"5\" charset= \"utf-8\" content=\"width=device-width, initial-scale=1.0, user-scalable=no\">\n";
-	ptr += "<title>Sensors Control</title>\n";
-	ptr += "<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}\n";
-	ptr += "body{margin-top: 50px;} h1 {color: #444444;margin: 50px auto 30px;} h3 {color: #444444;margin-bottom: 50px;}\n";
-	ptr += ".button {display: block;width: 80px;background-color: #3498db;border: none;color: white;padding: 13px 30px;text-decoration: none;font-size: 25px;margin: 0px auto 35px;cursor: pointer;border-radius: 4px;}\n";
-	ptr += ".button-on {background-color: #3498db;}\n";
-	ptr += ".button-on:active {background-color: #2980b9;}\n";
-	ptr += ".button-off {background-color: #34495e;}\n";
-	ptr += ".button-off:active {background-color: #2c3e50;}\n";
-	ptr += "p {font-size: 14px;color: #888;margin-bottom: 10px;}\n";
-	ptr += "</style>\n";
-	ptr += "</head>\n";
-	ptr += "<body>\n";
-	ptr += "<h1>ESP32 Web Server</h1>\n";
-	ptr += "<h3>Sensores:</h3>\n";
-	ptr += "<h4>Temperatura quarto: </h4><h3>";
-	ptr += medido[0];
-	ptr += "ºC</h3>\n";
-	ptr += "<h4>Temperatura caixa: </h4><h3>";
-	ptr += tempetura[0];
-	ptr += "ºC</h3>\n";
-	ptr += "<h4>Temperatura ESP32: </h4><h3>";
-	ptr += temperatureRead();
-	ptr += "ºC</h3>\n";
-	ptr += "<h4>Pressão: </h4><h3>";
-	ptr += medido[1];
-	ptr += " Pa</h3>\n";
-	ptr += "<h4>Luz1: </h4><h3>";
-	ptr += medido[2];
-	ptr += " Lux</h3>\n";
-	ptr += "<h4>luz2: </h4><h3>";
-	ptr += medido[3];
-	ptr += " Lux</h3>\n";
-	ptr += "<h4>CO2: </h4><h3>";
-	ptr += medido[4];
-	ptr += " ppm</h3>\n";
-	ptr += "<h4>humidade: </h4><h3>";
-	ptr += medido[5];
-	ptr += "%</h3>\n";
-	ptr += "";
-	ptr += "</body>\n";
-	ptr += "</html>\n";
-	return ptr;
+String SendbaseHTML(){
+	String html = BASE_HTML;
+    html.replace("%TEMP_QUARTO%", String(medido[0]));
+    html.replace("%TEMP_CAIXA%", String(tempetura[0]));
+    html.replace("%TEMP_ESP%", String(temperatureRead()));
+    html.replace("%PRESSAO%", String(medido[1]));
+    html.replace("%LUZ1%", String(medido[2]));
+    html.replace("%LUZ2%", String(medido[3]));
+    html.replace("%CO2%", String(medido[4]));
+    html.replace("%HUMIDADE%", String(medido[5]));
+	return html;
 }
 
 /// @brief HTML da pagina de controle dos leds `/led`
-String SendLEDHTML()
-{
-	String ptr = "<!DOCTYPE html> <html>\n";
-	ptr += "<head><meta name=\"viewport\" charset= \"utf-8\" content=\"width=device-width, initial-scale=1.0, user-scalable=no\">\n";
-	ptr += "<title>Sensors Control</title>\n";
-	ptr += "<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}\n";
-	ptr += "body{margin-top: 50px;} h1 {color: #444444;margin: 50px auto 30px;} h3 {color: #444444;margin-bottom: 50px;}\n";
-	ptr += ".button {display: block;width: 80px;background-color: #3498db;border: none;color: white;padding: 16px 32px;text-decoration: none;font-size: 100px;margin: 0px auto 35px;cursor: pointer;border-radius: 4px;}\n";
-	ptr += ".button-on {background-color: #3498db;}\n";
-	ptr += ".button-on:active {background-color: #2980b9;}\n";
-	ptr += ".button-off {background-color: #34495e;}\n";
-	ptr += ".button-off:active {background-color: #2c3e50;}\n";
-	ptr += "p {font-size: 14px;color: #888;margin-bottom: 10px;}\n";
-	ptr += "</style>\n";
-	ptr += "</head>\n";
-	ptr += "<body>\n";
-	ptr += "<h1>ESP32 Web Server</h1>\n";
-	ptr += "<h3>LED:</h3>\n";
-	if (FLED)
-	{
-		ptr += "<p><a href=\"/led?Foff=1\"><button class=\"button-on\">ON</button></a></p>\n";
-	}
-	else
-	{
-		ptr += "<p><a href=\"/led?Fon=1\"><button class=\"button-off\">OFF</button></a></p>\n";
-	}
-	if (FLED_override)
-	{
-		ptr += "<p><a href=\"/led?Ooff=1\"><button class=\"button-on\">OVERRIDE ON</button></a></p>\n";
-	}
-	else
-	{
-		ptr += "<p><a href=\"/led?Oon=1\"><button class=\"button-off\">OVERRIDE OFF</button></a></p>\n";
-	}
-	ptr += "<form action=\"/led\">\n";
-	ptr += "Hue (0-360): <input type=\"text\" name=\"hue\" value=\"";
-	ptr += hue;
-	ptr += "\">\n";
-	ptr += "Saturação (0-100): <input type=\"text\" name=\"sat\" value=\"";
-	ptr += sat;
-	ptr += "\">\n";
-	ptr += "Intencidade (0-100): <input type=\"text\" name=\"int\" value=\"";
-	ptr += intenc;
-	ptr += "\">\n";
-	ptr += "<input type=\"submit\" value=\"Submit\">\n";
-	ptr += "</form>\n";
-	ptr += "<p>date: ";
-	struct tm data = localTime();
-	ptr += data.tm_wday;
-	ptr += " - ";
-	ptr += data.tm_hour;
-	ptr += ":";
-	ptr += data.tm_min;
-	ptr += ":";
-	ptr += data.tm_sec;
-	ptr += "\n <p> Potencia atual: ";
-	ptr += (int)(100 * vezes / (horarioLuz[alarme][2] * 60.0 * 2.0));
-	ptr += "%</p>\n";
-	ptr += "<p> Vezes atual: ";
-	ptr += (int)vezes;
-	ptr += "</p>\n";
-	ptr += "<p> duração atual: ";
-	ptr += horarioLuz[alarme][2];
-	ptr += "</p>\n";
-	ptr += "</body>\n";
-	ptr += "</html>\n";
-	return ptr;
+String SendLEDHTML(){
+String html = LED_HTML;
+    
+    html.replace("%LED_F_STATE%", FLED ? "off" : "on");
+    html.replace("%LED_F_BUTTON%", FLED ? "on" : "off");
+    html.replace("%LED_F_LABEL%", FLED ? "ON" : "OFF");
+    
+    html.replace("%LED_O_STATE%", FLED_override ? "off" : "on");
+    html.replace("%LED_O_BUTTON%", FLED_override ? "on" : "off");
+    html.replace("%LED_O_LABEL%", FLED_override ? "OVERRIDE ON" : "OVERRIDE OFF");
+    
+    html.replace("%HUE%", String(hue));
+    html.replace("%SAT%", String(sat));
+    html.replace("%INT%", String(intenc));
+    
+    struct tm data = localTime(); // Suponha que localTime() retorne uma struct tm válida
+    char dateStr[50];
+    sprintf(dateStr, "%d - %02d:%02d:%02d", data.tm_wday, data.tm_hour, data.tm_min, data.tm_sec);
+    html.replace("%DATE%", String(dateStr));
+    
+    int potenciaAtual = (int)(100 * vezes / (horarioLuz[alarme][2] * 60.0 * 2.0));
+    html.replace("%POTENCIA_ATUAL%", String(potenciaAtual));
+    html.replace("%VEZES_ATUAL%", String(vezes));
+    html.replace("%DURACAO_ATUAL%", String(horarioLuz[alarme][2]));
+	return html;
 }
 
 /// @brief HTML da pagina de controle dos alarmes `/alarme`
-String SendAlarmeHTML()
-{
-	String ptr = "<!DOCTYPE html> <html>\n";
-	ptr += "<head><meta name=\"viewport\" charset= \"utf-8\" content=\"width=device-width, initial-scale=1.0, user-scalable=no\">\n";
-	ptr += "<title>Sensors Control</title>\n";
-	ptr += "<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}\n";
-	ptr += "body{margin-top: 50px;} h1 {color: #444444;margin: 50px auto 30px;} h3 {color: #444444;margin-bottom: 50px;}\n";
-	ptr += ".button {display: block;width: 80px;background-color: #3498db;border: none;color: white;padding: 16px 32px;text-decoration: none;font-size: 100px;margin: 0px auto 35px;cursor: pointer;border-radius: 4px;}\n";
-	ptr += ".button-on {background-color: #3498db;}\n";
-	ptr += ".button-on:active {background-color: #2980b9;}\n";
-	ptr += ".button-off {background-color: #34495e;}\n";
-	ptr += ".button-off:active {background-color: #2c3e50;}\n";
-	ptr += "p {font-size: 14px;color: #888;margin-bottom: 10px;}\n";
-	ptr += "</style>\n";
-	ptr += "</head>\n";
-	ptr += "<body>\n";
-	ptr += "<h1>ESP32 Web Server</h1>\n";
-	ptr += "<h3>Alarmes:</h3>\n";
-	ptr += "<form action=\"/alarme\">\n";
-	ptr += "hora (0-23): <input type=\"text\" name=\"hora\" value=\"";
-	ptr += horarioLuz[saveAlarme - 1][0];
-	ptr += "\">\n";
-	ptr += "minuto (0-59): <input type=\"text\" name=\"minuto\" value=\"";
-	ptr += horarioLuz[saveAlarme - 1][1];
-	ptr += "\">\n";
-	ptr += "tempo fade in (0-59): <input type=\"text\" name=\"fade\" value=\"";
-	ptr += horarioLuz[saveAlarme - 1][2];
-	ptr += "\">\n";
-	ptr += "tempo maximos (0-59): <input type=\"text\" name=\"max\" value=\"";
-	ptr += horarioLuz[saveAlarme - 1][3];
-	ptr += "\">\n";
-	ptr += "<input type=\"submit\" value=\"Submit\">\n";
-	ptr += "</form>\n";
-	ptr += "<p>date: ";
-	struct tm data = localTime();
-	ptr += data.tm_wday;
-	ptr += " - ";
-	ptr += data.tm_hour;
-	ptr += ":";
-	ptr += data.tm_min;
-	ptr += ":";
-	ptr += data.tm_sec;
-	ptr += "\n <p> Potencia atual: ";
-	ptr += (int)(100 * vezes / (horarioLuz[alarme][2] * 60.0 * 2.0));
-	ptr += "%</p>\n";
-	ptr += "<p> Vezes atual: ";
-	ptr += (int)vezes;
-	ptr += "</p>\n";
-	ptr += "<p> duração atual: ";
-	ptr += horarioLuz[alarme][2];
-	ptr += "</p>\n";
-	ptr += "</body>\n";
-	ptr += "</html>\n";
-	return ptr;
+String SendAlarmeHTML(){
+	String html = ALARM_HTML;
+
+    html.replace("%HORA%", String(horarioLuz[saveAlarme - 1][0]));
+    html.replace("%MINUTO%", String(horarioLuz[saveAlarme - 1][1]));
+    html.replace("%FADE%", String(horarioLuz[saveAlarme - 1][2]));
+    html.replace("%MAX%", String(horarioLuz[saveAlarme - 1][3]));
+
+    struct tm data = localTime();
+    char dateStr[30];
+    sprintf(dateStr, "%d-%02d-%02d %02d:%02d:%02d", data.tm_year + 1900, data.tm_mon + 1, data.tm_mday, data.tm_hour, data.tm_min, data.tm_sec);
+    html.replace("%DATA%", String(dateStr));
+
+    html.replace("%POTENCIA%", String((int)(100 * vezes / (horarioLuz[alarme][2] * 60.0 * 2.0))));
+    html.replace("%VEZES%", String((int)vezes));
+    html.replace("%DURACAO%", String(horarioLuz[alarme][2]));
+	return html;
 }
 
 String SendEcolhaAlarmeHTML()
