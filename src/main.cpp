@@ -433,7 +433,7 @@ void display_Error(error erro)
 				display_Wire_Error();
 			}
 			Serial.println("Wire problem");
-			delay(100);
+			delay(50);
 
 			i = i + 1;
 		}
@@ -503,7 +503,7 @@ void display_Error(error erro)
 					display_WiFi_Error();
 				}
 				Serial.print(".");
-				delay(50);
+				delay(20);
 				i = i + 1;
 			}
 		}
@@ -516,7 +516,6 @@ void display_Error(error erro)
 			{
 				display_Server_Error();
 			}
-			delay(50);
 			Serial.print("error Write - ");
 			Serial.print(client.getLastErrorMessage());
 			Serial.print(" -;- ");
