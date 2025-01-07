@@ -4,6 +4,7 @@
 #include <baseHTML.h>
 #include <ledHTML.h>
 #include <alarmHTML.h>
+#include <prometheusHTML.h>
 
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
@@ -17,8 +18,6 @@
 // web server
 #include <ESPAsyncWebServer.h>
 #include <AsyncTCP.h>
-
-#include <InfluxDbClient.h>
 
 #include <FastLED.h>
 
@@ -54,9 +53,6 @@ AsyncWebServer server(80);
 HTTPClient http;
 
 /// @brief influxDB
-
-InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN);
-Point sensor("Quarto_Leo");
 
 /// @brief FastLED
 
@@ -418,17 +414,6 @@ void display_Error(error erro)
 			i = i + 1;
 		}
 		Serial.println();
-		if (!client.validateConnection())
-		{
-			display_Server_Error();
-			Serial.println("rebooting");
-			for (uint16_t i = 0; i < 1000; i++)
-			{
-				ArduinoOTA.handle();
-				delay(5);
-			}
-			ESP.restart();
-		}
 		break;
 	case wire:
 		while (!Wire.begin() && i < MAX_ITER)
@@ -511,31 +496,6 @@ void display_Error(error erro)
 				delay(20);
 				i = i + 1;
 			}
-		}
-		break;
-	case ponto:
-		i = 0;
-		while (!client.writePoint(sensor) && i < MAX_ITER) // Write point
-		{
-			if (i == 0)
-			{
-				display_Server_Error();
-			}
-			Serial.print("error Write - ");
-			Serial.print(client.getLastErrorMessage());
-			Serial.print(" -;- ");
-			Serial.println(client.getLastStatusCode());
-
-			i = i + 1;
-			tft.drawFastHLine(140, 124, 20, 0xf800);
-			tft.drawFastHLine(140, 125, 20, 0xf800);
-			tft.drawFastHLine(140, 126, 20, 0xf800);
-		}
-		if (i == 0)
-		{
-			tft.drawFastHLine(140, 124, 20, 0x0000);
-			tft.drawFastHLine(140, 125, 20, 0x0000);
-			tft.drawFastHLine(140, 126, 20, 0x0000);
 		}
 		break;
 	case check:
@@ -671,6 +631,20 @@ void storageInit()
 		}
 	}
 #endif
+}
+
+/// @brief HTML da pagina do prometheus `/metrics`
+String SendPrometheusHTML(){
+	String html = PROMETHEUS_HTML;
+    html.replace("%TEMP_QUARTO%", String(medido[0]));
+    html.replace("%TEMP_CAIXA%", String(tempetura[0]));
+    html.replace("%TEMP_ESP%", String(temperatureRead()));
+    html.replace("%PRESSAO%", String(medido[1]));
+    html.replace("%LUZ1%", String(medido[2]));
+    html.replace("%LUZ2%", String(medido[3]));
+    html.replace("%CO2%", String(medido[4]));
+    html.replace("%HUMIDADE%", String(medido[5]));
+	return html;
 }
 
 /// @brief HTML da pagina inicial `/`
@@ -814,6 +788,11 @@ String SendERRORHTML()
 void handle_OnConnect(AsyncWebServerRequest *request)
 {
 	request->send(200, "text/html", SendbaseHTML());
+}
+
+void handle_Prometheus(AsyncWebServerRequest *request)
+{
+	request->send(200, "text/html", SendPrometheusHTML());
 }
 
 void handle_NotFound(AsyncWebServerRequest *request)
@@ -993,6 +972,8 @@ void wifiInit()
 			  { handle_led_v2(request); });
 	server.on("/alarme", [](AsyncWebServerRequest *request)
 			  { handle_alarme(request); });
+	server.on("/metrics", [](AsyncWebServerRequest *request)
+			  { handle_Prometheus(request); });
 	server.onNotFound([](AsyncWebServerRequest *request)
 					  { handle_NotFound(request); });
 	server.begin();
@@ -1195,24 +1176,6 @@ void medidaLuz()
 	}
 }
 
-void enviaValores()
-{
-
-	sensor.clearFields();
-	sensor.addField("temperatura", medido[0]);
-	sensor.addField("temperatura_caixa", tempetura[0]);
-	sensor.addField("temperatura_ESP32", temperatureRead());
-	sensor.addField("Pressão", medido[1]);
-	sensor.addField("Luz1", medido[2]);
-	sensor.addField("luz2", medido[3]);
-	sensor.addField("CO2", medido[4] == 10000 ? 0 : medido[4]);
-	sensor.addField("humidade", medido[5]);
-	display_Error(connected);
-	display_Error(ponto);
-	alarmeControl(localTime());
-	FastLED.show();
-}
-
 void pegaValores()
 {
 	sensors_event_t humidity, temperatura;
@@ -1357,8 +1320,6 @@ void loop()
 	}
 	if (tempo[3] + 4000 <= myMillis)
 	{
-		enviaValores();
-		Serial.println("4s OK");
 		tempo[3] = tempo[3] + 4000;
 	}
 	if (tempo[4] + 600000 <= myMillis)
