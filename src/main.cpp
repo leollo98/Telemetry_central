@@ -111,6 +111,7 @@ uint8_t light = 255;
 uint8_t oldlight = 255;
 uint16_t valor[] = {0, 0, 0, 0, 0};
 float medido[] = {0, 0, 0, 0, 0, 0};
+float medido_antigo[] = {0, 0, 0, 0, 0, 0};
 float tempetura[] = {0, 0};
 BH1750 lightMeter(0x23);  // addr nc
 BH1750 lightMeter2(0x5C); // addr vcc
@@ -792,7 +793,7 @@ void handle_OnConnect(AsyncWebServerRequest *request)
 
 void handle_Prometheus(AsyncWebServerRequest *request)
 {
-	request->send(200, "text/html", SendPrometheusHTML());
+	request->send(200, "text/plain", SendPrometheusHTML());
 }
 
 void handle_NotFound(AsyncWebServerRequest *request)
@@ -1052,23 +1053,43 @@ void dados(uint8_t linha, float dado)
 }
 
 /// @brief organiza os dados para colocação na tela
-void display(float temp, uint16_t pres, uint16_t lux, uint16_t lux2, uint16_t co2)
+void display(float temp, float pres, float lux, float humid, float co2)
 {
 	uint8_t linha = 0;
-	tft.fillRect(68, lin(linha), 12 * 5, 16, 0);
-	dados(lin(linha), temp);
+	if ((uint16_t)temp != (uint16_t)medido_antigo[0])
+	{
+		tft.fillRect(68, lin(linha), 12 * 5, 16, 0);
+		dados(lin(linha), temp);
+	}
 	linha++;
-	tft.fillRect(68, lin(linha), 12 * 4, 16, 0);
-	dados(lin(linha), pres);
+	if ((uint16_t)pres != (uint16_t)medido_antigo[1])
+	{
+		tft.fillRect(68, lin(linha), 12 * 4, 16, 0);
+		dados(lin(linha), (uint16_t)pres);
+	}
 	linha++;
-	tft.fillRect(68, lin(linha), 12 * 4, 16, 0);
-	dados(lin(linha), lux);
+	if ((uint16_t)lux != (uint16_t)medido_antigo[2])
+	{
+		tft.fillRect(68, lin(linha), 12 * 4, 16, 0);
+		dados(lin(linha), (uint16_t)lux);
+	}
 	linha++;
-	tft.fillRect(68, lin(linha), 12 * 4, 16, 0);
-	dados(lin(linha), lux2);
+	if ((uint16_t)humid != (uint16_t)medido_antigo[3])
+	{
+		tft.fillRect(68, lin(linha), 12 * 4, 16, 0);
+		dados(lin(linha), (uint16_t)humid);
+	}
 	linha++;
-	tft.fillRect(68, lin(linha), 12 * 4, 16, 0);
-	dados(lin(linha), co2);
+	if ((uint16_t)co2 != (uint16_t)medido_antigo[4])
+	{
+		tft.fillRect(68, lin(linha), 12 * 4, 16, 0);
+		dados(lin(linha), (uint16_t)co2);
+	}
+	medido_antigo[0] = temp;
+	medido_antigo[1] = pres;
+	medido_antigo[2] = lux;
+	medido_antigo[3] = humid;
+	medido_antigo[4] = co2;
 }
 
 /// @brief controle do acionamento do alarme
@@ -1302,21 +1323,24 @@ void loop()
 	if (tempo[0] + 15 <= myMillis) // controle luz da tela
 	{
 		controleBack();
-		tempo[0] = tempo[0] + 25;
+		
+		tempo[0] = tempo[0] + 15;
 	}
 	if (tempo[1] + 500 <= myMillis)
 	{
 		medidaLuz();
 		onTimer();
 		resetOnTime(localTime());
+		
+		display_Error(check);
+		
 		tempo[1] = tempo[1] + 500;
 	}
-	if (tempo[2] + 2000 <= myMillis)
+	if (tempo[2] + 100 <= myMillis)
 	{
 		pegaValores();
-		display_Error(check);
-		display(medido[0], medido[1] / 1e2, medido[2], medido[5], medido[4]);
-		tempo[2] = tempo[2] + 2000;
+		display(medido[0], medido[1] / 1e2, medido[3], medido[5], medido[4]);
+		tempo[2] = tempo[2] + 200;
 	}
 	if (tempo[3] + 4000 <= myMillis)
 	{
