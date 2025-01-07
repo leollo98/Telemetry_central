@@ -103,6 +103,7 @@ enum error
 	connected,
 	ponto
 };
+bool reboot = false;
 
 /// @brief sensores
 
@@ -182,6 +183,10 @@ void resetOnTime(struct tm timeinfo)
 		return;
 	}
 	if (timeinfo.tm_sec < 5)
+	{
+		return;
+	}
+	if (reboot == false)
 	{
 		return;
 	}
@@ -1356,9 +1361,10 @@ void loop()
 		Serial.println("4s OK");
 		tempo[3] = tempo[3] + 4000;
 	}
-	if (tempo[4] + 10000 <= myMillis)
+	if (tempo[4] + 600000 <= myMillis)
 	{
 		// verificaRede();
-		tempo[4] = tempo[4] + 10000;
+		reboot = true;
+		tempo[4] = tempo[4] + 600000;
 	}
 }
