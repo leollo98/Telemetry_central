@@ -1220,7 +1220,7 @@ void verificaRede() {
 }
 
 void sendBacklight(){
-  luz = medido[2] + medido[3];
+  luz = ((7*medido[2]) + (3*medido[3]))/10;
   uint16_t trigger = (uint16_t)floor(pow(luz,1.75)/100.0)+1;
   if (abs(luz - oldluz) >= trigger) {
     TCP.connect("192.168.10.1", 6969);
