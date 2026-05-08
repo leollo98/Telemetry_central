@@ -1,30 +1,33 @@
 #include <Arduino.h>
 
+#define MAX_ITER 50
+
+// HTMLs
 #include <alarmHTML.h>
 #include <baseHTML.h>
 #include <credenciais.h>
 #include <ledHTML.h>
 #include <prometheusHTML.h>
 
-#include <ArduinoOTA.h>
-#include <HTTPClient.h>
-#include <WiFiClient.h>
-#include <WiFiUdp.h>
-
-#define MAX_ITER 50
-
 // tft
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7735.h> // Hardware-specific library
 
 // web server
+#include <ArduinoOTA.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
+#include <HTTPClient.h>
+#include <WiFiClient.h>
+#include <WiFiUdp.h>
 
+// leds
 #include <FastLED.h>
 
+// date
 #include "time.h"
 
+// sensors
 #include <Adafruit_AHTX0.h>
 #include <Adafruit_BMP280.h>
 #include <BH1750.h>
@@ -432,17 +435,17 @@ void display_Error(error erro) {
     }
     break;
   case connected:
-    if (WiFi.localIP().toString() == "0.0.0.0") {
+    if (WiFi.status() != WL_CONNECTED) {
       Serial.println("Wifi connection lost");
-      WiFi.disconnect(true, true);
-      WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-      delay(10);
-      while (WiFi.localIP().toString() == "0.0.0.0" && i < MAX_ITER) {
+      while (WiFi.status() != WL_CONNECTED && i < MAX_ITER) {
+        WiFi.disconnect(true, true);
         if (i == 0) {
           display_WiFi_Error();
         }
+        delay(10);
+        WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
         Serial.print(".");
-        delay(20);
+        delay(200);
         i = i + 1;
       }
     }
@@ -549,7 +552,6 @@ void sensorsInit() {
 void storageInit() {
 #ifdef save
   pref.begin("alarms", false);
-
   for (uint8_t i = 0; i < quantidadeAlarmes; i++) {
     for (size_t j = 0; j < 4; j++) {
       String chave = (i * 4 + j) + "a";
@@ -642,49 +644,11 @@ String SendAlarmeHTML() {
 }
 
 String SendEcolhaAlarmeHTML() {
-  String ptr = "<!DOCTYPE html> <html>\n";
-  ptr +=
-      "<head><meta name=\"viewport\" charset= \"utf-8\" "
-      "content=\"width=device-width, initial-scale=1.0, user-scalable=no\">\n";
-  ptr += "<title>Sensors Control</title>\n";
-  ptr += "<style>html { font-family: Helvetica; display: inline-block; margin: "
-         "0px auto; text-align: center;}\n";
-  ptr += "body{margin-top: 50px;} h1 {color: #444444;margin: 50px auto 30px;} "
-         "h3 {color: #444444;margin-bottom: 50px;}\n";
-  ptr +=
-      ".button {display: block;width: 80px;background-color: #3498db;border: "
-      "none;color: white;padding: 16px 32px;text-decoration: none;font-size: "
-      "100px;margin: 0px auto 35px;cursor: pointer;border-radius: 4px;}\n";
-  ptr += ".button-on {background-color: #3498db;}\n";
-  ptr += ".button-on:active {background-color: #2980b9;}\n";
-  ptr += ".button-off {background-color: #34495e;}\n";
-  ptr += ".button-off:active {background-color: #2c3e50;}\n";
-  ptr += "p {font-size: 14px;color: #888;margin-bottom: 10px;}\n";
-  ptr += "table {font-family: arial, sans-serif;  border-collapse: collapse;  "
-         "width: 100%;}td, th {  border: 1px solid #dddddd;  text-align: left; "
-         " padding: 8px;}tr:nth-child(even) {background-color: #dddddd;}\n";
-  ptr += "</style>\n";
-  ptr += "</head>\n";
-  ptr += "<body>\n";
-  ptr += "<h1>ESP32 Web Server</h1>\n";
-  ptr += "<h3>Alarmes:</h3>\n";
+  String ptr = ESCOLHA_ALARME_INICIO_HTML;
 #ifdef save
-  ptr += "<form action=\"/alarme\">\n";
-  ptr += "alarme (1-8): <input type=\"text\" name=\"alarme\" value=\"";
-  ptr += 1;
-  ptr += "\">\n";
-  ptr += "<input type=\"submit\" value=\"Submit\">\n";
-  ptr += "</form>\n";
+  ptr += ESCOLHA_ALARME_SAVE_HTML;
 #endif
-  ptr += "<table>";
-  ptr += "<tr>";
-  ptr += "<th>Alarme</th>";
-  ptr += "<th>Hora</th>";
-  ptr += "<th>Minuto</th>";
-  ptr += "<th>Fade In</th>";
-  ptr += "<th>Maximo</th>";
-  ptr += "</tr>";
-
+  ptr += ESCOLHA_ALARME_MEIO_HTML;
   for (uint8_t i = 0; i < quantidadeAlarmes; i++) {
     ptr += "<tr>";
     ptr += "<td>";
@@ -697,7 +661,7 @@ String SendEcolhaAlarmeHTML() {
     }
     ptr += "</tr>";
   }
-  ptr += "</table>";
+  ptr += ESCOLHA_ALARME_FINAL_HTML;
 
   return ptr;
 }
@@ -837,7 +801,7 @@ void ArduinoOTAInit() {
         tft.setTextSize(3);
         tft.setCursor(4, 56);
         tft.print("Updating");
-        
+
         String type;
         if (ArduinoOTA.getCommand() == U_FLASH)
           type = "sketch";
@@ -851,34 +815,30 @@ void ArduinoOTAInit() {
       .onEnd([]() { Serial.println("\nEnd"); })
       .onProgress([](unsigned int progress, unsigned int total) {
         Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-        tft.drawRect(0,120,(progress / (total / 160)),20,ST7735_WHITE);
+        tft.drawRect(0, 120, (progress / (total / 160)), 20, ST7735_WHITE);
       })
       .onError([](ota_error_t error) {
         Serial.printf("Error[%u]: ", error);
         tft.fillScreen(0);
         tft.setTextSize(2);
         tft.setCursor(4, 56);
-        if (error == OTA_AUTH_ERROR){
+        if (error == OTA_AUTH_ERROR) {
           Serial.println("Auth Failed");
           tft.print("Auth Failed");
-        }
-        else if (error == OTA_BEGIN_ERROR){
+        } else if (error == OTA_BEGIN_ERROR) {
           Serial.println("Begin Failed");
           tft.print("Begin Failed");
-        }
-        else if (error == OTA_CONNECT_ERROR){
+        } else if (error == OTA_CONNECT_ERROR) {
           Serial.println("Connect      Failed");
           tft.print("Connect Failed");
-          }
-        else if (error == OTA_RECEIVE_ERROR){
+        } else if (error == OTA_RECEIVE_ERROR) {
           Serial.println("Receive      Failed");
           tft.print("Receive Failed");
-          }
-        else if (error == OTA_END_ERROR){
+        } else if (error == OTA_END_ERROR) {
           Serial.println("End Failed");
           tft.print("End Failed");
-          }
-          delay(10000);
+        }
+        delay(10000);
         esp_restart();
       });
   ArduinoOTA.begin();
@@ -889,30 +849,27 @@ void display_init() {
   tft.initR(INITR_BLACKTAB); // initialize a ST7735S chip
   Serial.println("TFT initialized");
   tft.setRotation(1);
-
   tft.fillScreen(0);
   tft.setTextSize(1);
 }
 
-void onConnect(void* arg, AsyncClient* c) {
+void onConnect(void *arg, AsyncClient *c) {
   String msg = (String)luz;
   c->write(msg.c_str(), msg.length());
   c->write("\n"); // importante para o Python dar split certinho
 }
 
-void onData(void* arg, AsyncClient* c, void* data, size_t len) {
-  //Serial.print("📩 Dados recebidos: ");
-  Serial.write((uint8_t*)data, len);
+void onData(void *arg, AsyncClient *c, void *data, size_t len) {
+  // Serial.print("📩 Dados recebidos: ");
+  Serial.write((uint8_t *)data, len);
   Serial.println();
 }
 
 void wifiInit() {
   WiFi.mode(WIFI_STA);
   delay(10);
-  // wifiMulti.addAP(WIFI_SSID, WIFI_PASSWORD);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   delay(10);
-  // while (wifiMulti.run() != WL_CONNECTED)
   int16_t i = 0;
   display_Error(inicio);
 
@@ -929,7 +886,6 @@ void wifiInit() {
   server.begin();
   TCP.onConnect(&onConnect, nullptr);
   TCP.onData(&onData, nullptr);
-
 }
 
 void pinDef() {
@@ -978,10 +934,8 @@ void dados(uint8_t linha, uint16_t dado, uint16_t cor) {
 void dados(uint8_t linha, float dado, uint16_t cor) {
   tft.setTextColor(cor);
   if (dado < 10) {
-
     tft.setCursor(80, linha);
     tft.print(dado);
-
   } else if (dado < 100) {
     tft.setCursor(68, linha);
     tft.print(dado);
@@ -1121,8 +1075,8 @@ void pegaValores() {
   aht.getEvent(&humidity, &temperatura);
   tempetura[0] = bmp.readTemperature();
   tempetura[1] = temperatura.temperature;
-  medido[0] =
-      floorf((((tempetura[0] + tempetura[1]) / 2.0) + 0.5) * 100.0) / 100.0;
+  medido[0] = tempetura[0];
+  // floorf((((tempetura[0] + tempetura[1]) / 2.0) + 0.5) * 100.0) / 100.0;
   medido[0] = tempetura[1];
   medido[1] = bmp.readPressure();
   if (lightMeter.measurementReady()) {
@@ -1143,8 +1097,6 @@ bool makeRequest(String serverName) {
   }
   return false;
 }
-
-
 
 void verificaRede() {
   aux[0]++;
@@ -1219,13 +1171,13 @@ void verificaRede() {
   }
 }
 
-void sendBacklight(){
-  luz = ((7*medido[2]) + (3*medido[3]))/10;
-  uint16_t trigger = (uint16_t)floor(pow(luz,1.75)/100.0)+3;
+void sendBacklight() {
+  luz = ((75 * medido[2]) + (35 * medido[3])) / 110;
+  uint16_t trigger = (uint16_t)floor(pow(luz, 1.35) / 100.0) + 1;
   if (abs(luz - oldluz) >= trigger) {
+    oldluz = luz;
     TCP.connect("192.168.10.1", 6969);
   }
-  oldluz = luz;
 }
 
 void loop() {
@@ -1250,11 +1202,12 @@ void loop() {
     onTimer();
     resetOnTime(localTime());
     display_Error(check);
+    sendBacklight();
     tempo[2] = tempo[2] + 500;
   }
   if (tempo[3] + 4000 <= myMillis) {
     ArduinoOTA.handle();
-    sendBacklight();
+
     tempo[3] = tempo[3] + 4000;
   }
   if (tempo[4] + 600000 <= myMillis) {
@@ -1262,8 +1215,7 @@ void loop() {
     reboot = true;
     tempo[4] = tempo[4] + 600000;
   }
-  while (update)
-  {
+  while (update) {
     ArduinoOTA.handle();
   }
 }

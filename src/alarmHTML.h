@@ -34,3 +34,104 @@ const char ALARM_HTML[] = R"rawliteral(
 </body>
 </html>
 )rawliteral";
+
+const char ESCOLHA_ALARME_INICIO_HTML[] = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Sensors Control</title>
+  <style>
+    html {
+      font-family: Helvetica;
+      display: inline-block;
+      margin: 0px auto;
+      text-align: center;
+    }
+    body {
+      margin-top: 50px;
+    }
+    h1 {
+      color: #444444;
+      margin: 50px auto 30px;
+    }
+    h3 {
+      color: #444444;
+      margin-bottom: 50px;
+    }
+    .button {
+      display: block;
+      width: 80px;
+      background-color: #3498db;
+      border: none;
+      color: white;
+      padding: 16px 32px;
+      text-decoration: none;
+      font-size: 100px;
+      margin: 0px auto 35px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .button-on {
+      background-color: #3498db;
+    }
+    .button-on:active {
+      background-color: #2980b9;
+    }
+    .button-off {
+      background-color: #34495e;
+    }
+    .button-off:active {
+      background-color: #2c3e50;
+    }
+    p {
+      font-size: 14px;
+      color: #888;
+      margin-bottom: 10px;
+    }
+    table {
+      font-family: arial, sans-serif;
+      border-collapse: collapse;
+      width: 100%;
+    }
+    td, th {
+      border: 1px solid #dddddd;
+      text-align: left;
+      padding: 8px;
+    }
+    tr:nth-child(even) {
+      background-color: #dddddd;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>ESP32 Web Server</h1>
+  <h3>Alarmes:</h3>
+)rawliteral";
+
+const char ESCOLHA_ALARME_SAVE_HTML[] = R"rawliteral(
+<form action="/alarme">
+  alarme (1-8):
+  <input type="text" name="alarme" value="1">
+  <input type="submit" value="Submit">
+</form>
+)rawliteral";
+
+
+const char ESCOLHA_ALARME_MEIO_HTML[] = R"rawliteral(
+<table>
+  <tr>
+    <th>Alarme</th>
+    <th>Hora</th>
+    <th>Minuto</th>
+    <th>Fade In</th>
+    <th>Maximo</th>
+  </tr>
+)rawliteral";
+
+const char ESCOLHA_ALARME_FINAL_HTML[] = R"rawliteral(
+  </table>
+</html>
+)rawliteral";
