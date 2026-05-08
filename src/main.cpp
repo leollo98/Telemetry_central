@@ -6,9 +6,9 @@
 #include <alarmHTML.h>
 #include <baseHTML.h>
 #include <credenciais.h>
+#include <erroHTML.h>
 #include <ledHTML.h>
 #include <prometheusHTML.h>
-#include <erroHTML.h>
 
 // tft
 #include <Adafruit_GFX.h>
@@ -310,6 +310,13 @@ void display_Swtich4_Error() {
   tft.print("Leo");
 }
 
+uint16_t RGB565(uint8_t red, uint8_t green, uint8_t blue) {
+  uint16_t red5 = red >> 3;
+  uint16_t green6 = green >> 2;
+  uint16_t blue5 = blue >> 3;
+  return (red5 << 11) | (green6 << 5) | blue5;
+}
+
 void fill_display() {
   tft.fillScreen(0);
   tft.setTextSize(2);
@@ -324,7 +331,7 @@ void fill_display() {
   tft.setTextSize(2);
   tft.print("C");
 
-  tft.drawLine(0, 24, 160, 24, 0xffff);
+  tft.drawLine(0, 24, 160, 24, RGB565(255, 255, 255));
 
   linha++;
   tft.setCursor(4, lin(linha));
@@ -332,7 +339,7 @@ void fill_display() {
   tft.setCursor(84, lin(linha));
   tft.print("   hPa");
 
-  tft.drawLine(0, 24 + 24 * linha, 160, 24 + 24 * linha, 0xffff);
+  tft.drawLine(0, 24 + 24 * linha, 160, 24 + 24 * linha, RGB565(255, 255, 255));
 
   linha++;
   tft.setCursor(4, lin(linha));
@@ -344,7 +351,7 @@ void fill_display() {
   tft.setCursor(84, lin(linha));
   tft.print("   Nit");
 
-  tft.drawLine(0, 24 + 24 * linha, 160, 24 + 24 * linha, 0xffff);
+  tft.drawLine(0, 24 + 24 * linha, 160, 24 + 24 * linha, RGB565(255, 255, 255));
 
   linha++;
   tft.setCursor(4, lin(linha));
@@ -352,7 +359,7 @@ void fill_display() {
   tft.setCursor(84, lin(linha));
   tft.print("   %");
 
-  tft.drawLine(0, 24 + 24 * linha, 160, 24 + 24 * linha, 0xffff);
+  tft.drawLine(0, 24 + 24 * linha, 160, 24 + 24 * linha, RGB565(255, 255, 255));
 
   linha++;
   tft.setCursor(4, lin(linha));
@@ -364,6 +371,7 @@ void fill_display() {
   tft.setCursor(84, lin(linha));
   tft.print("   ppm");
 }
+
 
 void display_Error(error erro) {
   uint64_t i = 0;
@@ -453,59 +461,59 @@ void display_Error(error erro) {
     break;
   case check:
     if (WiFi.isConnected()) {
-      tft.drawFastHLine(0, 124, 20, 0x0000);
-      tft.drawFastHLine(0, 125, 20, 0x0000);
-      tft.drawFastHLine(0, 126, 20, 0x0000);
+      tft.drawFastHLine(0, 124, 20, RGB565(0, 0, 0));
+      tft.drawFastHLine(0, 125, 20, RGB565(0, 0, 0));
+      tft.drawFastHLine(0, 126, 20, RGB565(0, 0, 0));
     } else {
-      tft.drawFastHLine(0, 124, 20, 0xf800);
-      tft.drawFastHLine(0, 125, 20, 0xf800);
-      tft.drawFastHLine(0, 126, 20, 0xf800);
+      tft.drawFastHLine(0, 124, 20, RGB565(255, 0, 0));
+      tft.drawFastHLine(0, 125, 20, RGB565(255, 0, 0));
+      tft.drawFastHLine(0, 126, 20, RGB565(255, 0, 0));
     }
     if (bmp.begin()) {
-      tft.drawFastHLine(40, 124, 20, 0x0000);
-      tft.drawFastHLine(40, 125, 20, 0x0000);
-      tft.drawFastHLine(40, 126, 20, 0x0000);
+      tft.drawFastHLine(40, 124, 20, RGB565(0, 0, 0));
+      tft.drawFastHLine(40, 125, 20, RGB565(0, 0, 0));
+      tft.drawFastHLine(40, 126, 20, RGB565(0, 0, 0));
     } else {
-      tft.drawFastHLine(40, 124, 20, 0xf800);
-      tft.drawFastHLine(40, 125, 20, 0xf800);
-      tft.drawFastHLine(40, 126, 20, 0xf800);
+      tft.drawFastHLine(40, 124, 20, RGB565(255, 0, 0));
+      tft.drawFastHLine(40, 125, 20, RGB565(255, 0, 0));
+      tft.drawFastHLine(40, 126, 20, RGB565(255, 0, 0));
     }
     if (aht.begin()) {
-      tft.drawFastHLine(60, 124, 20, 0x0000);
-      tft.drawFastHLine(60, 125, 20, 0x0000);
-      tft.drawFastHLine(60, 126, 20, 0x0000);
+      tft.drawFastHLine(60, 124, 20, RGB565(0, 0, 0));
+      tft.drawFastHLine(60, 125, 20, RGB565(0, 0, 0));
+      tft.drawFastHLine(60, 126, 20, RGB565(0, 0, 0));
     } else {
-      tft.drawFastHLine(60, 124, 20, 0xfbe0);
-      tft.drawFastHLine(60, 125, 20, 0xfbe0);
-      tft.drawFastHLine(60, 126, 20, 0xfbe0);
+      tft.drawFastHLine(60, 124, 20, RGB565(255, 127, 0));
+      tft.drawFastHLine(60, 125, 20, RGB565(255, 127, 0));
+      tft.drawFastHLine(60, 126, 20, RGB565(255, 127, 0));
     }
     if (lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE_2, 0x23)) {
-      tft.drawFastHLine(80, 124, 20, 0x0000);
-      tft.drawFastHLine(80, 125, 20, 0x0000);
-      tft.drawFastHLine(80, 126, 20, 0x0000);
+      tft.drawFastHLine(80, 124, 20, RGB565(0, 0, 0));
+      tft.drawFastHLine(80, 125, 20, RGB565(0, 0, 0));
+      tft.drawFastHLine(80, 126, 20, RGB565(0, 0, 0));
     } else {
-      tft.drawFastHLine(80, 124, 20, 0xf800);
-      tft.drawFastHLine(80, 125, 20, 0xf800);
-      tft.drawFastHLine(80, 126, 20, 0xf800);
+      tft.drawFastHLine(80, 124, 20, RGB565(255, 0, 0));
+      tft.drawFastHLine(80, 125, 20, RGB565(255, 0, 0));
+      tft.drawFastHLine(80, 126, 20, RGB565(255, 0, 0));
     }
     if (lightMeter2.begin(BH1750::CONTINUOUS_HIGH_RES_MODE_2, 0x5C)) {
-      tft.drawFastHLine(100, 124, 20, 0x0000);
-      tft.drawFastHLine(100, 125, 20, 0x0000);
-      tft.drawFastHLine(100, 126, 20, 0x0000);
+      tft.drawFastHLine(100, 124, 20, RGB565(0, 0, 0));
+      tft.drawFastHLine(100, 125, 20, RGB565(0, 0, 0));
+      tft.drawFastHLine(100, 126, 20, RGB565(0, 0, 0));
     } else {
-      tft.drawFastHLine(100, 124, 20, 0xfbe0);
-      tft.drawFastHLine(100, 125, 20, 0xfbe0);
-      tft.drawFastHLine(100, 126, 20, 0xfbe0);
+      tft.drawFastHLine(100, 124, 20, RGB565(255, 127, 0));
+      tft.drawFastHLine(100, 125, 20, RGB565(255, 127, 0));
+      tft.drawFastHLine(100, 126, 20, RGB565(255, 127, 0));
     }
     if (WiFi.localIP().toString() == "0.0.0.0") {
-      tft.drawFastHLine(120, 124, 20, 0xf800);
-      tft.drawFastHLine(120, 125, 20, 0xf800);
-      tft.drawFastHLine(120, 126, 20, 0xf800);
+      tft.drawFastHLine(120, 124, 20, RGB565(255, 0, 0));
+      tft.drawFastHLine(120, 125, 20, RGB565(255, 0, 0));
+      tft.drawFastHLine(120, 126, 20, RGB565(255, 0, 0));
     } else {
 
-      tft.drawFastHLine(120, 124, 20, 0x0000);
-      tft.drawFastHLine(120, 125, 20, 0x0000);
-      tft.drawFastHLine(120, 126, 20, 0x0000);
+      tft.drawFastHLine(120, 124, 20, RGB565(0, 0, 0));
+      tft.drawFastHLine(120, 125, 20, RGB565(0, 0, 0));
+      tft.drawFastHLine(120, 126, 20, RGB565(0, 0, 0));
     }
     break;
   default:
@@ -667,9 +675,7 @@ String SendEcolhaAlarmeHTML() {
   return ptr;
 }
 
-String SendERRORHTML() {
-  return ERROR_HTML;
-}
+String SendERRORHTML() { return ERROR_HTML; }
 
 void handle_OnConnect(AsyncWebServerRequest *request) {
   request->send(200, "text/html", SendbaseHTML());
