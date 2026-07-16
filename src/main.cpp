@@ -1,92 +1,10 @@
-#include <Arduino.h>
-
-#define MAX_ITER 50
-
-// HTMLs
-#include <alarmHTML.h>
-#include <baseHTML.h>
-#include <credenciais.h>
-#include <erroHTML.h>
-#include <ledHTML.h>
-#include <prometheusHTML.h>
-
-// tft
-#include <Adafruit_GFX.h>
-#include <Adafruit_ST7735.h> // Hardware-specific library
-
-// web server
-#include <ArduinoOTA.h>
-#include <AsyncTCP.h>
-#include <ESPAsyncWebServer.h>
-#include <HTTPClient.h>
-#include <WiFiClient.h>
-#include <WiFiUdp.h>
-
-// leds
-#include <FastLED.h>
-
-// date
-#include "time.h"
-
-// sensors
-#include <Adafruit_AHTX0.h>
-#include <Adafruit_BMP280.h>
-#include <BH1750.h>
-#include <MHZ19.h>
-
-/// @brief data storage
-#define save
-#ifdef save
-#include <Preferences.h>
-Preferences pref;
-#endif
-
-/// @brief macros
-#define lin(a) (a * 24 + 4)
-
-/// @brief tft
-#define back 37
-#define TFT_RST 36 // we use the seesaw for resetting to save a pin
-#define SPI_SDA 48
-#define SPI_CLK 47
-#define TFT_CS 38
-#define TFT_DC 35
-Adafruit_ST7735 tft =
-    Adafruit_ST7735(TFT_CS, TFT_DC, SPI_SDA, SPI_CLK, TFT_RST);
-
-/// @brief  web server
-
-AsyncWebServer server(80);
-HTTPClient http;
-AsyncClient TCP;
-/// @brief FastLED
-
-#define LED_PIN 13
-#define NUM_LEDS 16
-CRGB leds[NUM_LEDS];
-#define CHIPSET WS2812B
-#define COLOR_ORDER GRB
-bool FLED = true;
-bool FLED_override = false;
-bool started = false;
-uint16_t hue = 0;
-uint8_t sat = 0;
-uint8_t intenc = 0;
-uint64_t vezes = 0;
-
-/// @brief alarmes -> {hora de inicio, minuto de inicio, duração do fade, luzes
-/// no maximo}
-#define quantidadeAlarmes 8
-uint8_t saveAlarme = 0;
-uint8_t horarioLuz[quantidadeAlarmes][4] = {
-    {9, 0, 15, 25}, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0},
-    {0, 0, 0, 0},   {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0},
-};
-uint8_t alarme = 0;
+#include <main.h>
 
 /// @brief variaveis de controle
 uint64_t tempo[] = {0, 0, 0, 0, 0};
 uint64_t aux[] = {0, 0};
+float medido[6] = {0};
+float tempetura[2] = {0};
 enum error {
   check,
   inicio,
@@ -102,19 +20,12 @@ bool reboot = false;
 bool update = false;
 
 /// @brief sensores
-
-#define RX1 11
-#define TX1 12
 // #define SDA 8
 // #define SCL 9
 uint16_t light = 160;
-uint8_t oldlight = 160;
 uint16_t luz = 0;
 uint16_t oldluz = 0;
 uint16_t valor[] = {0, 0, 0, 0, 0};
-float medido[] = {0, 0, 0, 0, 0, 0};
-float medido_antigo[] = {0, 0, 0, 0, 0, 0};
-float tempetura[] = {0, 0};
 BH1750 lightMeter(0x23);  // addr nc
 BH1750 lightMeter2(0x5C); // addr vcc
 MHZ19 myMHZ19;
@@ -122,46 +33,7 @@ MHZ19 myMHZ19;
 Adafruit_AHTX0 aht;
 Adafruit_BMP280 bmp;
 
-void preencheLeds(int16_t hue, int16_t sat, int16_t potencia) {
-  fill_solid(leds, 16, CHSV(hue, sat, potencia));
-}
 
-/// @brief cuida de executar as luzes dos alarmes cadastrados
-void onTimer() {
-  if (!started) {
-    return;
-  }
-  if (horarioLuz[alarme][0] == 0) {
-    if (horarioLuz[alarme][1] == 0) {
-      return;
-    }
-  }
-
-  if (vezes <= (horarioLuz[alarme][2] + horarioLuz[alarme][3]) * 60 * 2) {
-    uint16_t potencia = min((uint64_t)(255.0 * (double)vezes /
-                                       (horarioLuz[alarme][2] * 60.0 * 2.0)),
-                            (uint64_t)254);
-    preencheLeds(25, 255, potencia);
-    vezes++;
-    FastLED.show();
-  } else {
-    preencheLeds(25, 255, 0);
-    vezes = 0;
-    started = false;
-    FastLED.show();
-  }
-}
-
-/// @brief pega o horario via NTP
-tm localTime() {
-  // https://cplusplus.com/reference/ctime/tm/
-  struct tm timeinfo;
-  if (!getLocalTime(&timeinfo)) {
-    Serial.println("Failed to obtain time");
-    return timeinfo;
-  }
-  return timeinfo;
-}
 
 void resetOnTime(struct tm timeinfo) {
   if (timeinfo.tm_hour != 4) {
@@ -178,200 +50,6 @@ void resetOnTime(struct tm timeinfo) {
   }
   esp_restart();
 }
-
-void scanI2C() {
-  byte error, address;
-  int nDevices;
-  Serial.println("Scanning...");
-  nDevices = 0;
-  for (address = 1; address < 127; address++) {
-    Wire.beginTransmission(address);
-    error = Wire.endTransmission();
-    if (error == 0) {
-      Serial.print("I2C device found at address 0x");
-      if (address < 16) {
-        Serial.print("0");
-      }
-      Serial.println(address, HEX);
-      nDevices++;
-    } else if (error == 4) {
-      Serial.print("Unknow error at address 0x");
-      if (address < 16) {
-        Serial.print("0");
-      }
-      Serial.println(address, HEX);
-    }
-  }
-  if (nDevices == 0) {
-    Serial.println("No I2C devices found\n");
-  } else {
-    Serial.println("done\n");
-  }
-}
-
-void display_Wire_Error() {
-  tft.fillScreen(0);
-  tft.setTextSize(3);
-  tft.setCursor(4, lin(1));
-  tft.print("Wire");
-  tft.setCursor(4, lin(2));
-  tft.print("Error");
-}
-
-void display_bmp_Error() {
-  tft.fillScreen(0);
-  tft.setTextSize(3);
-  tft.setCursor(4, lin(1));
-  tft.print("bmp");
-  tft.setCursor(4, lin(2));
-  tft.print("Error");
-}
-
-void display_aht_Error() {
-  tft.fillScreen(0);
-  tft.setTextSize(3);
-  tft.setCursor(4, lin(1));
-  tft.print("aht");
-  tft.setCursor(4, lin(2));
-  tft.print("Error");
-}
-
-void display_BH1750_Error(char num) {
-  tft.fillScreen(0);
-  tft.setTextSize(3);
-  tft.setCursor(4, lin(1));
-  tft.print("BH1750 ");
-  tft.print(num);
-  tft.setCursor(4, lin(2));
-  tft.print("Error");
-}
-
-void display_WiFi_Error() {
-  tft.fillScreen(0);
-  tft.setTextSize(3);
-  tft.setCursor(4, lin(1));
-  tft.print("WiFi");
-  tft.setCursor(4, lin(2));
-  tft.print("Error");
-}
-
-void display_Server_Error() {
-  tft.fillScreen(0);
-  tft.setTextSize(3);
-  tft.setCursor(4, lin(1));
-  tft.print("Server");
-  tft.setCursor(4, lin(2));
-  tft.print("Error");
-}
-
-void display_Internet_Error() {
-
-  tft.fillScreen(0);
-  tft.setTextSize(3);
-  tft.setCursor(4, lin(1));
-  tft.print("Internet");
-  tft.setCursor(4, lin(2));
-  tft.print("Error");
-}
-
-void display_Router_Error() {
-  tft.fillScreen(0);
-  tft.setTextSize(3);
-  tft.setCursor(4, lin(1));
-  tft.print("Router");
-  tft.setCursor(4, lin(2));
-  tft.print("Error");
-}
-
-void display_Swtich2_Error() {
-  tft.fillScreen(0);
-  tft.setTextSize(3);
-  tft.setCursor(4, lin(1));
-  tft.print("Switch");
-  tft.setCursor(4, lin(2));
-  tft.print("Sala");
-}
-
-void display_Swtich3_Error() {
-  tft.fillScreen(0);
-  tft.setTextSize(3);
-  tft.setCursor(4, lin(1));
-  tft.print("Switch");
-  tft.setCursor(4, lin(2));
-  tft.print("Server");
-}
-
-void display_Swtich4_Error() {
-  tft.fillScreen(0);
-  tft.setTextSize(3);
-  tft.setCursor(4, lin(1));
-  tft.print("Switch");
-  tft.setCursor(4, lin(2));
-  tft.print("Leo");
-}
-
-uint16_t RGB565(uint8_t red, uint8_t green, uint8_t blue) {
-  uint16_t red5 = red >> 3;
-  uint16_t green6 = green >> 2;
-  uint16_t blue5 = blue >> 3;
-  return (red5 << 11) | (green6 << 5) | blue5;
-}
-
-void fill_display() {
-  tft.fillScreen(0);
-  tft.setTextSize(2);
-
-  uint8_t linha = 0;
-  tft.setCursor(4, lin(linha));
-  tft.print("Temp: ");
-  tft.setCursor(84, lin(linha));
-  tft.print("    ");
-  tft.setTextSize(1);
-  tft.print("o");
-  tft.setTextSize(2);
-  tft.print("C");
-
-  tft.drawLine(0, 24, 160, 24, RGB565(255, 255, 255));
-
-  linha++;
-  tft.setCursor(4, lin(linha));
-  tft.print("Pres: ");
-  tft.setCursor(84, lin(linha));
-  tft.print("   hPa");
-
-  tft.drawLine(0, 24 + 24 * linha, 160, 24 + 24 * linha, RGB565(255, 255, 255));
-
-  linha++;
-  tft.setCursor(4, lin(linha));
-  tft.print("Luz :");
-  tft.setTextSize(1);
-  tft.setCursor(40, lin(linha) + 10);
-  tft.print("int");
-  tft.setTextSize(2);
-  tft.setCursor(84, lin(linha));
-  tft.print("   Nit");
-
-  tft.drawLine(0, 24 + 24 * linha, 160, 24 + 24 * linha, RGB565(255, 255, 255));
-
-  linha++;
-  tft.setCursor(4, lin(linha));
-  tft.print("umid:");
-  tft.setCursor(84, lin(linha));
-  tft.print("   %");
-
-  tft.drawLine(0, 24 + 24 * linha, 160, 24 + 24 * linha, RGB565(255, 255, 255));
-
-  linha++;
-  tft.setCursor(4, lin(linha));
-  tft.print("CO  :");
-  tft.setTextSize(1);
-  tft.setCursor(30, lin(linha) + 6);
-  tft.print("2");
-  tft.setTextSize(2);
-  tft.setCursor(84, lin(linha));
-  tft.print("   ppm");
-}
-
 
 void display_Error(error erro) {
   uint64_t i = 0;
@@ -394,7 +72,6 @@ void display_Error(error erro) {
       }
       Serial.println("Wire problem");
       delay(50);
-
       i = i + 1;
     }
     break;
@@ -460,67 +137,20 @@ void display_Error(error erro) {
     }
     break;
   case check:
-    if (WiFi.isConnected()) {
-      tft.drawFastHLine(0, 124, 20, RGB565(0, 0, 0));
-      tft.drawFastHLine(0, 125, 20, RGB565(0, 0, 0));
-      tft.drawFastHLine(0, 126, 20, RGB565(0, 0, 0));
-    } else {
-      tft.drawFastHLine(0, 124, 20, RGB565(255, 0, 0));
-      tft.drawFastHLine(0, 125, 20, RGB565(255, 0, 0));
-      tft.drawFastHLine(0, 126, 20, RGB565(255, 0, 0));
-    }
-    if (bmp.begin()) {
-      tft.drawFastHLine(40, 124, 20, RGB565(0, 0, 0));
-      tft.drawFastHLine(40, 125, 20, RGB565(0, 0, 0));
-      tft.drawFastHLine(40, 126, 20, RGB565(0, 0, 0));
-    } else {
-      tft.drawFastHLine(40, 124, 20, RGB565(255, 0, 0));
-      tft.drawFastHLine(40, 125, 20, RGB565(255, 0, 0));
-      tft.drawFastHLine(40, 126, 20, RGB565(255, 0, 0));
-    }
-    if (aht.begin()) {
-      tft.drawFastHLine(60, 124, 20, RGB565(0, 0, 0));
-      tft.drawFastHLine(60, 125, 20, RGB565(0, 0, 0));
-      tft.drawFastHLine(60, 126, 20, RGB565(0, 0, 0));
-    } else {
-      tft.drawFastHLine(60, 124, 20, RGB565(255, 127, 0));
-      tft.drawFastHLine(60, 125, 20, RGB565(255, 127, 0));
-      tft.drawFastHLine(60, 126, 20, RGB565(255, 127, 0));
-    }
-    if (lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE_2, 0x23)) {
-      tft.drawFastHLine(80, 124, 20, RGB565(0, 0, 0));
-      tft.drawFastHLine(80, 125, 20, RGB565(0, 0, 0));
-      tft.drawFastHLine(80, 126, 20, RGB565(0, 0, 0));
-    } else {
-      tft.drawFastHLine(80, 124, 20, RGB565(255, 0, 0));
-      tft.drawFastHLine(80, 125, 20, RGB565(255, 0, 0));
-      tft.drawFastHLine(80, 126, 20, RGB565(255, 0, 0));
-    }
-    if (lightMeter2.begin(BH1750::CONTINUOUS_HIGH_RES_MODE_2, 0x5C)) {
-      tft.drawFastHLine(100, 124, 20, RGB565(0, 0, 0));
-      tft.drawFastHLine(100, 125, 20, RGB565(0, 0, 0));
-      tft.drawFastHLine(100, 126, 20, RGB565(0, 0, 0));
-    } else {
-      tft.drawFastHLine(100, 124, 20, RGB565(255, 127, 0));
-      tft.drawFastHLine(100, 125, 20, RGB565(255, 127, 0));
-      tft.drawFastHLine(100, 126, 20, RGB565(255, 127, 0));
-    }
-    if (WiFi.localIP().toString() == "0.0.0.0") {
-      tft.drawFastHLine(120, 124, 20, RGB565(255, 0, 0));
-      tft.drawFastHLine(120, 125, 20, RGB565(255, 0, 0));
-      tft.drawFastHLine(120, 126, 20, RGB565(255, 0, 0));
-    } else {
-
-      tft.drawFastHLine(120, 124, 20, RGB565(0, 0, 0));
-      tft.drawFastHLine(120, 125, 20, RGB565(0, 0, 0));
-      tft.drawFastHLine(120, 126, 20, RGB565(0, 0, 0));
-    }
+    showErrorTft(0, WiFi.isConnected());
+    showErrorTft(2, bmp.begin());
+    showErrorTft(3, aht.begin());
+    showErrorTft(4, lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE_2, 0x23));
+    showErrorTft(5, lightMeter2.begin(BH1750::CONTINUOUS_HIGH_RES_MODE_2, 0x5C));
     break;
   default:
     break;
   }
   if (i > 0) {
     fill_display();
+  }
+  if (i >= MAX_ITER) {
+    esp_restart();
   }
 }
 
@@ -531,7 +161,6 @@ void sensorsInit() {
   myMHZ19.autoCalibration();
 
   display_Error(wire);
-  // scanI2C();
 
   display_Error(Sbmp);
   Serial.println("BMP Init");
@@ -557,234 +186,13 @@ void sensorsInit() {
   configTime(-10800, 0, ntpServer0, ntpServer1, ntpServer2);
 }
 
-/// @brief inicia o armazenamento para dados persisitentes
-void storageInit() {
-#ifdef save
-  pref.begin("alarms", false);
-  for (uint8_t i = 0; i < quantidadeAlarmes; i++) {
-    for (size_t j = 0; j < 4; j++) {
-      String chave = (i * 4 + j) + "a";
-      horarioLuz[i][j] = pref.getInt(chave.c_str(), 0);
-    }
-  }
-#endif
-}
-
-/// @brief HTML da pagina do prometheus `/metrics`
-String SendPrometheusHTML() {
-  String html = PROMETHEUS_HTML;
-  html.replace("%TEMP_QUARTO%", String(medido[0]));
-  html.replace("%TEMP_CAIXA%", String(tempetura[0]));
-  html.replace("%TEMP_ESP%", String(temperatureRead()));
-  html.replace("%PRESSAO%", String(medido[1]));
-  html.replace("%LUZ1%", String(medido[2]));
-  html.replace("%LUZ2%", String(medido[3]));
-  html.replace("%CO2%", String(medido[4]));
-  html.replace("%HUMIDADE%", String(medido[5]));
-  return html;
-}
-
-/// @brief HTML da pagina inicial `/`
-String SendbaseHTML() {
-  String html = BASE_HTML;
-  html.replace("%TEMP_QUARTO%", String(medido[0]));
-  html.replace("%TEMP_CAIXA%", String(tempetura[0]));
-  html.replace("%TEMP_ESP%", String(temperatureRead()));
-  html.replace("%PRESSAO%", String(medido[1]));
-  html.replace("%LUZ1%", String(medido[2]));
-  html.replace("%LUZ2%", String(medido[3]));
-  html.replace("%CO2%", String(medido[4]));
-  html.replace("%HUMIDADE%", String(medido[5]));
-  return html;
-}
-
-/// @brief HTML da pagina de controle dos leds `/led`
-String SendLEDHTML() {
-  String html = LED_HTML;
-
-  html.replace("%LED_F_STATE%", FLED ? "off" : "on");
-  html.replace("%LED_F_BUTTON%", FLED ? "on" : "off");
-  html.replace("%LED_F_LABEL%", FLED ? "ON" : "OFF");
-
-  html.replace("%LED_O_STATE%", FLED_override ? "off" : "on");
-  html.replace("%LED_O_BUTTON%", FLED_override ? "on" : "off");
-  html.replace("%LED_O_LABEL%", FLED_override ? "OVERRIDE ON" : "OVERRIDE OFF");
-
-  html.replace("%HUE%", String(hue));
-  html.replace("%SAT%", String(sat));
-  html.replace("%INT%", String(intenc));
-
-  struct tm data =
-      localTime(); // Suponha que localTime() retorne uma struct tm válida
-  char dateStr[50];
-  sprintf(dateStr, "%d - %02d:%02d:%02d", data.tm_wday, data.tm_hour,
-          data.tm_min, data.tm_sec);
-  html.replace("%DATE%", String(dateStr));
-
-  int potenciaAtual = (int)(100 * vezes / (horarioLuz[alarme][2] * 60.0 * 2.0));
-  html.replace("%POTENCIA_ATUAL%", String(potenciaAtual));
-  html.replace("%VEZES_ATUAL%", String(vezes));
-  html.replace("%DURACAO_ATUAL%", String(horarioLuz[alarme][2]));
-  return html;
-}
-
-/// @brief HTML da pagina de controle dos alarmes `/alarme`
-String SendAlarmeHTML() {
-  String html = ALARM_HTML;
-
-  html.replace("%HORA%", String(horarioLuz[saveAlarme - 1][0]));
-  html.replace("%MINUTO%", String(horarioLuz[saveAlarme - 1][1]));
-  html.replace("%FADE%", String(horarioLuz[saveAlarme - 1][2]));
-  html.replace("%MAX%", String(horarioLuz[saveAlarme - 1][3]));
-
-  struct tm data = localTime();
-  char dateStr[30];
-  sprintf(dateStr, "%d-%02d-%02d %02d:%02d:%02d", data.tm_year + 1900,
-          data.tm_mon + 1, data.tm_mday, data.tm_hour, data.tm_min,
-          data.tm_sec);
-  html.replace("%DATA%", String(dateStr));
-
-  html.replace(
-      "%POTENCIA%",
-      String((int)(100 * vezes / (horarioLuz[alarme][2] * 60.0 * 2.0))));
-  html.replace("%VEZES%", String((int)vezes));
-  html.replace("%DURACAO%", String(horarioLuz[alarme][2]));
-  return html;
-}
-
-String SendEcolhaAlarmeHTML() {
-  String ptr = ESCOLHA_ALARME_INICIO_HTML;
-#ifdef save
-  ptr += ESCOLHA_ALARME_SAVE_HTML;
-#endif
-  ptr += ESCOLHA_ALARME_MEIO_HTML;
-  for (uint8_t i = 0; i < quantidadeAlarmes; i++) {
-    ptr += "<tr>";
-    ptr += "<td>";
-    ptr += i + 1;
-    ptr += "</td>";
-    for (uint8_t j = 0; j < 4; j++) {
-      ptr += "<td>";
-      ptr += horarioLuz[i][j];
-      ptr += "</td>";
-    }
-    ptr += "</tr>";
-  }
-  ptr += ESCOLHA_ALARME_FINAL_HTML;
-
-  return ptr;
-}
-
-String SendERRORHTML() { return ERROR_HTML; }
-
-void handle_OnConnect(AsyncWebServerRequest *request) {
-  request->send(200, "text/html", SendbaseHTML());
-}
-
-void handle_Prometheus(AsyncWebServerRequest *request) {
-  request->send(200, "text/plain", SendPrometheusHTML());
-}
-
-void handle_NotFound(AsyncWebServerRequest *request) {
-  request->send(404, "text/plain", "Not found");
-}
-
-void handle_led_v2(AsyncWebServerRequest *request) {
-  int paramsNr = request->params();
-
-  for (int i = 0; i < paramsNr; i++) {
-    AsyncWebParameter *p = request->getParam(i);
-    if (p->name() == "Fon") {
-      FLED = true;
-    }
-    if (p->name() == "Foff") {
-      FLED = false;
-    }
-    if (p->name() == "hue") {
-      hue = (p->value()).toInt();
-    }
-    if (p->name() == "sat") {
-      sat = (p->value()).toInt();
-    }
-    if (p->name() == "int") {
-      intenc = (p->value()).toInt();
-    }
-    if (p->name() == "Oon") {
-      FLED_override = true;
-    }
-    if (p->name() == "Ooff") {
-      FLED_override = false;
-    }
-  }
-  if (FLED_override) {
-
-    preencheLeds((float)hue * 255 / 360, sat * 2.55, intenc * 2.55);
-  } else {
-    preencheLeds(25, 255, 0);
-  }
-  FastLED.show();
-  request->send(200, "text/html", SendLEDHTML());
-}
-
-void handle_alarme(AsyncWebServerRequest *request) {
-  int paramsNr = request->params();
-  int ok = 0;
-  for (int i = 0; i < paramsNr; i++) {
-    AsyncWebParameter *p = request->getParam(i);
-    if (p->name() == "alarme") {
-      if ((p->value()).toInt() < quantidadeAlarmes) {
-        saveAlarme = (p->value()).toInt();
-      } else {
-        request->send(200, "text/html", SendAlarmeHTML());
-        return;
-      }
-    }
-    if (p->name() == "hora") {
-      horarioLuz[saveAlarme - 1][0] = (p->value()).toInt();
-      ok++;
-    }
-    if (p->name() == "minuto") {
-      horarioLuz[saveAlarme - 1][1] = (p->value()).toInt();
-      ok++;
-    }
-    if (p->name() == "fade") {
-      horarioLuz[saveAlarme - 1][2] = (p->value()).toInt();
-      ok++;
-    }
-    if (p->name() == "max") {
-      horarioLuz[saveAlarme - 1][3] = (p->value()).toInt();
-      ok++;
-    }
-    if (ok == 4) {
-#ifdef save
-      for (uint8_t i = 0; i < quantidadeAlarmes; i++) {
-        for (size_t j = 0; j < 4; j++) {
-          String chave = (i * 4 + j) + "a";
-          pref.putInt(chave.c_str(), horarioLuz[i][j]);
-        }
-      }
-      pref.end();
-      storageInit();
-#endif
-      saveAlarme = 0;
-    }
-  }
-  if (saveAlarme != 0)
-    request->send(200, "text/html", SendAlarmeHTML());
-  else
-    request->send(200, "text/html", SendEcolhaAlarmeHTML());
-}
-
 /// @brief inicializa o OTA do Arduino
 void ArduinoOTAInit() {
   ArduinoOTA
       .onStart([]() {
         update = true;
-        server.end();
-        tft.fillScreen(0);
-        tft.setTextSize(3);
-        tft.setCursor(4, 56);
-        tft.print("Updating");
+        stopServer();
+        updateTft();
 
         String type;
         if (ArduinoOTA.getCommand() == U_FLASH)
@@ -799,54 +207,15 @@ void ArduinoOTAInit() {
       .onEnd([]() { Serial.println("\nEnd"); })
       .onProgress([](unsigned int progress, unsigned int total) {
         Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-        tft.drawRect(0, 120, (progress / (total / 160)), 20, ST7735_WHITE);
+        updateTft(progress, total);
       })
       .onError([](ota_error_t error) {
         Serial.printf("Error[%u]: ", error);
-        tft.fillScreen(0);
-        tft.setTextSize(2);
-        tft.setCursor(4, 56);
-        if (error == OTA_AUTH_ERROR) {
-          Serial.println("Auth Failed");
-          tft.print("Auth Failed");
-        } else if (error == OTA_BEGIN_ERROR) {
-          Serial.println("Begin Failed");
-          tft.print("Begin Failed");
-        } else if (error == OTA_CONNECT_ERROR) {
-          Serial.println("Connect      Failed");
-          tft.print("Connect Failed");
-        } else if (error == OTA_RECEIVE_ERROR) {
-          Serial.println("Receive      Failed");
-          tft.print("Receive Failed");
-        } else if (error == OTA_END_ERROR) {
-          Serial.println("End Failed");
-          tft.print("End Failed");
-        }
+        updateTft(error);
         delay(10000);
         esp_restart();
       });
   ArduinoOTA.begin();
-}
-
-void display_init() {
-  Serial.println("TFT start");
-  tft.initR(INITR_BLACKTAB); // initialize a ST7735S chip
-  Serial.println("TFT initialized");
-  tft.setRotation(1);
-  tft.fillScreen(0);
-  tft.setTextSize(1);
-}
-
-void onConnect(void *arg, AsyncClient *c) {
-  String msg = (String)luz;
-  c->write(msg.c_str(), msg.length());
-  c->write("\n"); // importante para o Python dar split certinho
-}
-
-void onData(void *arg, AsyncClient *c, void *data, size_t len) {
-  // Serial.print("📩 Dados recebidos: ");
-  Serial.write((uint8_t *)data, len);
-  Serial.println();
 }
 
 void wifiInit() {
@@ -856,20 +225,6 @@ void wifiInit() {
   delay(10);
   int16_t i = 0;
   display_Error(inicio);
-
-  server.on("/",
-            [](AsyncWebServerRequest *request) { handle_OnConnect(request); });
-  server.on("/led",
-            [](AsyncWebServerRequest *request) { handle_led_v2(request); });
-  server.on("/alarme",
-            [](AsyncWebServerRequest *request) { handle_alarme(request); });
-  server.on("/metrics",
-            [](AsyncWebServerRequest *request) { handle_Prometheus(request); });
-  server.onNotFound(
-      [](AsyncWebServerRequest *request) { handle_NotFound(request); });
-  server.begin();
-  TCP.onConnect(&onConnect, nullptr);
-  TCP.onData(&onData, nullptr);
 }
 
 void pinDef() {
@@ -884,120 +239,6 @@ void pinDef() {
   ledcSetup(0, 5e3, 8);
   ledcAttachPin(back, 0);
   ledcWrite(0, 255 - light);
-}
-
-/// @brief configura os dados para a formatação correta e posiciona eles na tela
-void dados(uint8_t linha, uint16_t dado, uint16_t cor) {
-  tft.setTextColor(cor);
-  if (dado < 10) {
-
-    tft.setCursor(104, linha);
-    tft.print(dado);
-  } else if (dado < 100) {
-    tft.setCursor(92, linha);
-    tft.print(dado);
-  } else if (dado < 1000) {
-    tft.setCursor(80, linha);
-    tft.print(dado);
-  } else if (dado < 10000) {
-    tft.setCursor(68, linha);
-    tft.print(dado);
-  } else if (dado < 0x8000) {
-    tft.setCursor(80, linha);
-    tft.print(dado / 1000);
-    tft.setCursor(104, linha);
-    tft.print("K");
-  } else {
-    tft.setCursor(68, linha);
-    tft.print("ERRO");
-  }
-  tft.setTextColor(ST7735_WHITE);
-}
-
-/// @brief configura os dados para a formatação correta e posiciona eles na tela
-void dados(uint8_t linha, float dado, uint16_t cor) {
-  tft.setTextColor(cor);
-  if (dado < 10) {
-    tft.setCursor(80, linha);
-    tft.print(dado);
-  } else if (dado < 100) {
-    tft.setCursor(68, linha);
-    tft.print(dado);
-  } else {
-    tft.setCursor(68, linha);
-    tft.print("ERRO");
-  }
-  tft.setTextColor(ST7735_WHITE);
-}
-
-/// @brief organiza os dados para colocação na tela
-void display(float temp, float pres, float lux, float humid, float co2) {
-  uint8_t linha = 0;
-  if ((uint16_t)temp != (uint16_t)medido_antigo[0]) {
-    tft.fillRect(68, lin(linha), 12 * 5, 16, 0);
-    temp < 24   ? dados(lin(linha), temp, ST7735_CYAN)
-    : temp < 26 ? dados(lin(linha), temp, ST7735_WHITE)
-                : dados(lin(linha), temp, ST7735_ORANGE);
-  }
-  linha++;
-  if ((uint16_t)pres != (uint16_t)medido_antigo[1]) {
-    tft.fillRect(68, lin(linha), 12 * 4, 16, 0);
-    dados(lin(linha), (uint16_t)pres, ST7735_WHITE);
-  }
-  linha++;
-  if ((uint16_t)lux != (uint16_t)medido_antigo[2]) {
-    tft.fillRect(68, lin(linha), 12 * 4, 16, 0);
-    dados(lin(linha), (uint16_t)lux, ST7735_WHITE);
-  }
-  linha++;
-  if ((uint16_t)humid != (uint16_t)medido_antigo[3]) {
-    tft.fillRect(68, lin(linha), 12 * 4, 16, 0);
-    humid < 40   ? dados(lin(linha), (uint16_t)humid, ST7735_ORANGE)
-    : humid < 75 ? dados(lin(linha), (uint16_t)humid, ST7735_WHITE)
-                 : dados(lin(linha), (uint16_t)humid, ST7735_CYAN);
-  }
-  linha++;
-  if ((uint16_t)co2 != (uint16_t)medido_antigo[4]) {
-    tft.fillRect(68, lin(linha), 12 * 4, 16, 0);
-    co2 < 1000 ? dados(lin(linha), (uint16_t)co2, ST7735_WHITE)
-               : dados(lin(linha), (uint16_t)co2, ST7735_ORANGE);
-  }
-  medido_antigo[0] = temp;
-  medido_antigo[1] = pres;
-  medido_antigo[2] = lux;
-  medido_antigo[3] = humid;
-  medido_antigo[4] = co2;
-}
-
-/// @brief controle do acionamento do alarme
-void alarmeControl(struct tm timeinfo) {
-  if (FLED_override)
-    return;
-  if (!started) {
-    if (timeinfo.tm_wday == 0)
-      return;
-    if (timeinfo.tm_wday == 6)
-      return;
-    bool ok = false;
-    for (uint8_t i = 0; i < sizeof horarioLuz / sizeof horarioLuz[0]; i++) {
-      if (timeinfo.tm_hour == horarioLuz[i][0])
-        if (timeinfo.tm_min == horarioLuz[i][1]) {
-          ok = true;
-          alarme = i;
-          break;
-        }
-    }
-    if (!ok) {
-      return;
-    }
-
-    started = true;
-  }
-}
-
-void fastledinit() {
-  FastLED.addLeds<CHIPSET, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS);
-  FastLED.setBrightness(255);
 }
 
 void timerinit() {
@@ -1038,11 +279,7 @@ void controleBack() {
     }
   }
   ledcWrite(0, 255 - light);
-  if (light != oldlight) {
-    tft.drawFastHLine(light, 127, 160, ST7735_BLACK);
-    tft.drawFastHLine(0, 127, light, ST7735_WHITE);
-  }
-  oldlight = light;
+  lightDisplay(light);
 }
 
 void medidaLuz() {
@@ -1073,97 +310,6 @@ void pegaValores() {
   medido[5] = humidity.relative_humidity;
 }
 
-bool makeRequest(String serverName) {
-
-  http.begin(serverName.c_str());
-  if (http.GET() > 0) {
-    return true;
-  }
-  return false;
-}
-
-void verificaRede() {
-  aux[0]++;
-  display_Error(connected);
-  switch (aux[0]) {
-  case 1:
-    if (!makeRequest("google.com")) {
-      display_Internet_Error();
-      aux[1] = 1;
-    }
-    break;
-  case 2:
-    if (!makeRequest("192.168.1.1")) {
-      display_Router_Error();
-      aux[1] = 2;
-    }
-    break;
-  case 3:
-    if (!makeRequest("192.168.1.2")) {
-      display_Swtich2_Error();
-      aux[1] = 3;
-    }
-    break;
-  case 4:
-    if (!makeRequest("192.168.1.3")) {
-      display_Swtich2_Error();
-      aux[1] = 4;
-    }
-    break;
-  case 5:
-    if (!makeRequest("192.168.1.4")) {
-      display_Swtich2_Error();
-      aux[1] = 5;
-    }
-    break;
-  case 6:
-    aux[0] = 0;
-    switch (aux[1]) {
-    case 1:
-      if (makeRequest("google.com")) {
-        fill_display();
-      }
-
-      break;
-    case 2:
-      if (makeRequest("192.168.1.9:8006")) {
-        fill_display();
-      }
-      break;
-    case 3:
-      if (makeRequest("192.168.1.2")) {
-        fill_display();
-      }
-      break;
-    case 4:
-      if (makeRequest("192.168.1.3")) {
-        fill_display();
-      }
-      break;
-    case 5:
-      if (makeRequest("192.168.1.4")) {
-        fill_display();
-      }
-    default:
-      break;
-    }
-
-    break;
-  default:
-    aux[0] = 0;
-    break;
-  }
-}
-
-void sendBacklight() {
-  luz = ((75 * medido[2]) + (35 * medido[3])) / 110;
-  uint16_t trigger = (uint16_t)floor(pow(luz, 1.35) / 100.0) + 1;
-  if (abs(luz - oldluz) >= trigger) {
-    oldluz = luz;
-    TCP.connect("192.168.10.1", 6969);
-  }
-}
-
 void loop() {
   long myMillis = millis();
 
@@ -1186,7 +332,6 @@ void loop() {
     onTimer();
     resetOnTime(localTime());
     display_Error(check);
-    sendBacklight();
     tempo[2] = tempo[2] + 500;
   }
   if (tempo[3] + 4000 <= myMillis) {
