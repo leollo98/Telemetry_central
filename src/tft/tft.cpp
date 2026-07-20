@@ -298,8 +298,9 @@ void lightDisplay(uint16_t light) {
   oldlight = light;
 }
 
-void showErrorTft(uint8_t position, bool hide) {
+bool showErrorTft(uint8_t position, bool show) {
   for (uint8_t i = 124; i < 127; i++) {
-    tft.drawFastHLine(position * 20, i, 20, RGB565(255*hide, 0, 0));
+    tft.drawFastHLine(position * 20, i, 20, RGB565(255*show, 0, 0));
   }
+  return show;
 }

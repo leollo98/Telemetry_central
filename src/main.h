@@ -7,15 +7,9 @@
 #include <tft/tft.h>
 #include <servidor/servidor.h>
 #include <globals.h>
-
+#include <failsafe/failsafe.h>
 #include <credenciais.h>
 
-
-
-// web server
-#include <ArduinoOTA.h>
-
-// date
 #include "time.h"
 
 // sensors

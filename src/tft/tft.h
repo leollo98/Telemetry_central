@@ -34,4 +34,4 @@ void updateTft(ota_error_t error);
 void display_init();
 void lightDisplay(uint16_t light);
 void display(float temp, float pres, float lux, float humid, float co2);
-void showErrorTft(uint8_t position, bool hide);
+bool showErrorTft(uint8_t position, bool hide);

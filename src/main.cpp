@@ -2,7 +2,7 @@
 
 /// @brief variaveis de controle
 uint64_t tempo[] = {0, 0, 0, 0, 0};
-uint64_t aux[] = {0, 0};
+uint64_t aux[] = {0, 0, 0};
 float medido[6] = {0};
 float tempetura[2] = {0};
 enum error {
@@ -33,8 +33,6 @@ MHZ19 myMHZ19;
 Adafruit_AHTX0 aht;
 Adafruit_BMP280 bmp;
 
-
-
 void resetOnTime(struct tm timeinfo) {
   if (timeinfo.tm_hour != 4) {
     return;
@@ -48,8 +46,10 @@ void resetOnTime(struct tm timeinfo) {
   if (reboot == false) {
     return;
   }
-  esp_restart();
+  espRestartSafe();
 }
+
+
 
 void display_Error(error erro) {
   uint64_t i = 0;
@@ -137,20 +137,26 @@ void display_Error(error erro) {
     }
     break;
   case check:
-    showErrorTft(0, WiFi.isConnected());
-    showErrorTft(2, bmp.begin());
-    showErrorTft(3, aht.begin());
-    showErrorTft(4, lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE_2, 0x23));
-    showErrorTft(5, lightMeter2.begin(BH1750::CONTINUOUS_HIGH_RES_MODE_2, 0x5C));
+    aux[2] += showErrorTft(0, !WiFi.isConnected());
+    aux[2] += showErrorTft(2, !bmp.begin());
+    aux[2] += showErrorTft(3, !aht.begin());
+    aux[2] += showErrorTft(4, !lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE_2, 0x23));
+    aux[2] += showErrorTft(5, !lightMeter2.begin(BH1750::CONTINUOUS_HIGH_RES_MODE_2, 0x5C));
     break;
   default:
     break;
+    
   }
+  
   if (i > 0) {
     fill_display();
   }
-  if (i >= MAX_ITER) {
-    esp_restart();
+  if (i >= MAX_ITER)
+  {
+    espRestartSafe();
+  }
+  if (aux[2] >= MAX_ITER) {
+    espRestartSafe();
   }
 }
 
@@ -184,38 +190,6 @@ void sensorsInit() {
   const char *ntpServer1 = "pool.ntp.org";
   const char *ntpServer2 = "ntp.br";
   configTime(-10800, 0, ntpServer0, ntpServer1, ntpServer2);
-}
-
-/// @brief inicializa o OTA do Arduino
-void ArduinoOTAInit() {
-  ArduinoOTA
-      .onStart([]() {
-        update = true;
-        stopServer();
-        updateTft();
-
-        String type;
-        if (ArduinoOTA.getCommand() == U_FLASH)
-          type = "sketch";
-        else // U_SPIFFS
-          type = "filesystem";
-
-        // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS
-        // using SPIFFS.end()
-        Serial.println("Start updating " + type);
-      })
-      .onEnd([]() { Serial.println("\nEnd"); })
-      .onProgress([](unsigned int progress, unsigned int total) {
-        Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-        updateTft(progress, total);
-      })
-      .onError([](ota_error_t error) {
-        Serial.printf("Error[%u]: ", error);
-        updateTft(error);
-        delay(10000);
-        esp_restart();
-      });
-  ArduinoOTA.begin();
 }
 
 void wifiInit() {

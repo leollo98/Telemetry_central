@@ -3,5 +3,6 @@
 
 extern float medido[6];
 extern float tempetura[2];
+extern bool update;
 
 #endif
