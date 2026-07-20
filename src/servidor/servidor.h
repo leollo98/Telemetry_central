@@ -22,3 +22,4 @@
 void stopServer();
 void onTimer();
 tm localTime();
+void serverSetup();

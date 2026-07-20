@@ -230,6 +230,7 @@ void setup() {
   wifiInit();
   ArduinoOTAInit();
   ArduinoOTA.handle();
+  serverSetup();
 
   sensorsInit();
   fastledinit();
